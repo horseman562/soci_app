@@ -63,6 +63,7 @@ class LoginActivity : AppCompatActivity() {
             }
 
             override fun onFailure(call: Call<LoginResponse>, t: Throwable) {
+                Log.d("MainActivity", "Errosssr: ${t.message}")
                 Toast.makeText(this@LoginActivity, "Error: ${t.message}", Toast.LENGTH_SHORT).show()
             }
         })
