@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1084898627527",
+    "project_id": "qiu-app-f1e40",
+    "storage_bucket": "qiu-app-f1e40.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1084898627527:android:6586b5d1fefaccba9f93e2",
+        "android_client_info": {
+          "package_name": "com.example.soci_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCYvDtjc7tAi-xFHUnrwztLARf9bw-zmHM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
