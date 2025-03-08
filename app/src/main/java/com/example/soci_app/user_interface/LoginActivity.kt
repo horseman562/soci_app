@@ -20,6 +20,16 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 🔥 Check if user is already logged in
+        val sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
+        val token = sharedPreferences.getString("AUTH_TOKEN", null)
+
+        if (token != null) {
+            // 🔥 User already logged in, go to HomeActivity
+            startActivity(Intent(this, HomeActivity::class.java))
+            finish() // Prevent going back to login
+        }
+
         setContentView(R.layout.activity_login)  // XML Layout File
 
         val emailField = findViewById<EditText>(R.id.email)

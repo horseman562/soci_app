@@ -1,0 +1,152 @@
+package com.example.soci_app.user_interface
+
+import android.os.Bundle
+import android.util.Log
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.example.soci_app.R
+import com.example.soci_app.adapter.MessageAdapter
+import com.example.soci_app.model.Message
+import com.example.soci_app.api.RetrofitClient
+import okhttp3.*
+import org.json.JSONObject
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
+import java.util.concurrent.TimeUnit
+
+class ChatActivity : AppCompatActivity() {
+    private lateinit var recyclerView: RecyclerView
+    private lateinit var messageAdapter: MessageAdapter
+    private lateinit var messageInput: EditText
+    private lateinit var sendButton: ImageButton
+
+    private var chatId: Int = 0
+    private var userId: Int = 3 // Replace with actual user ID dynamically
+    private val messages = mutableListOf<Message>()
+    private var webSocket: WebSocket? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_chat)
+
+        // Get chatId from intent
+        chatId = intent.getIntExtra("chat_id", 0)
+
+        // Initialize UI components
+        recyclerView = findViewById(R.id.recyclerViewMessages)
+        messageInput = findViewById(R.id.messageInput)
+        sendButton = findViewById(R.id.sendButton)
+
+        // Set up RecyclerView
+        messageAdapter = MessageAdapter(messages)
+        recyclerView.layoutManager = LinearLayoutManager(this)
+        recyclerView.adapter = messageAdapter
+
+        // Load previous messages
+        loadMessages()
+
+        // Connect WebSocket
+        connectWebSocket()
+
+        // Send new message
+        sendButton.setOnClickListener {
+            sendMessage()
+        }
+    }
+
+    private fun connectWebSocket() {
+        val request = Request.Builder()
+            .url("ws://10.1.19.2:7121?user_id=$userId")
+            .build()
+
+        val client = OkHttpClient.Builder()
+            .pingInterval(10, TimeUnit.SECONDS) // Keep connection alive
+            .build()
+
+        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                Log.d("WebSocket", "Connected to WebSocket server")
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val json = JSONObject(text)
+                if (json.getString("type") == "message") {
+                    val message = Message(
+                        id = 0,
+                        chat_id = chatId,
+                        sender_id = json.getInt("sender"),
+                        message = json.getString("message"),
+                        created_at = "Now"
+                    )
+
+                    runOnUiThread {
+                        messages.add(message)
+                        messageAdapter.notifyItemInserted(messages.size - 1)
+                        recyclerView.scrollToPosition(messages.size - 1)
+                    }
+                }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
+                Log.e("WebSocket", "Connection Error: ${t.message}")
+                reconnectWebSocket()
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.d("WebSocket", "WebSocket closed: $reason")
+                reconnectWebSocket()
+            }
+        })
+    }
+
+    private fun reconnectWebSocket() {
+        Log.d("WebSocket", "Reconnecting in 3 seconds...")
+        android.os.Handler(mainLooper).postDelayed({ connectWebSocket() }, 3000)
+    }
+
+    private fun loadMessages() {
+        RetrofitClient.instance.getMessages(chatId).enqueue(object : Callback<List<Message>> {
+            override fun onResponse(call: Call<List<Message>>, response: Response<List<Message>>) {
+                if (response.isSuccessful) {
+                    messages.clear()
+                    response.body()?.let {
+                        messages.addAll(it)
+                        messageAdapter.notifyDataSetChanged()
+                        recyclerView.scrollToPosition(messages.size - 1)
+                    }
+                } else {
+                    Log.e("ChatActivity", "Failed to load messages: ${response.errorBody()?.string()}")
+                }
+            }
+
+            override fun onFailure(call: Call<List<Message>>, t: Throwable) {
+                Log.e("ChatActivity", "Error fetching messages: ${t.message}")
+            }
+        })
+    }
+
+    private fun sendMessage() {
+        val messageText = messageInput.text.toString().trim()
+        if (messageText.isEmpty()) return
+
+        val jsonMessage = JSONObject().apply {
+            put("type", "message")
+            put("message", messageText)
+            put("receiverId", 2) // Change dynamically
+        }
+
+        webSocket?.send(jsonMessage.toString())
+
+        val message = Message(0, chatId, userId, messageText, "Now")
+        messages.add(message)
+        messageAdapter.notifyItemInserted(messages.size - 1)
+        recyclerView.scrollToPosition(messages.size - 1)
+
+        messageInput.text.clear()
+    }
+}
