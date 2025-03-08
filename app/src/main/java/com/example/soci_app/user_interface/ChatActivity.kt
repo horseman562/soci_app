@@ -1,5 +1,6 @@
 package com.example.soci_app.user_interface
 
+import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import android.widget.EditText
@@ -61,7 +62,7 @@ class ChatActivity : AppCompatActivity() {
 
     private fun connectWebSocket() {
         val request = Request.Builder()
-            .url("ws://10.1.19.2:7121?user_id=$userId")
+            .url("https://fine-terms-burn.loca.lt/")
             .build()
 
         val client = OkHttpClient.Builder()
@@ -110,8 +111,14 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun loadMessages() {
-        RetrofitClient.instance.getMessages(chatId).enqueue(object : Callback<List<Message>> {
+        Log.e("Load MEssage", "Load MEssage ${chatId}")
+        val sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
+        val token = sharedPreferences.getString("AUTH_TOKEN", null) ?: ""
+        val authHeader = "Bearer $token"
+        Log.e("Load Token", "Load Token ${token}")
+        RetrofitClient.instance.getMessages(authHeader, chatId).enqueue(object : Callback<List<Message>> {
             override fun onResponse(call: Call<List<Message>>, response: Response<List<Message>>) {
+
                 if (response.isSuccessful) {
                     messages.clear()
                     response.body()?.let {

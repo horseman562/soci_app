@@ -26,7 +26,10 @@ interface ApiService {
     fun createChat(@Header("Authorization") token: String, @Body request: CreateChatRequest): Call<Chat>
 
     @GET("chats/{chatId}/messages")
-    fun getMessages(@Path("chatId") chatId: Int): Call<List<Message>>
+    fun getMessages(
+        @Header("Authorization") token: String,  // Add this line
+        @Path("chatId") chatId: Int
+    ): Call<List<Message>>
 
     @POST("chats/{chatId}/messages")
     fun sendMessage(@Path("chatId") chatId: Int, @Body message: Message): Call<Message>
