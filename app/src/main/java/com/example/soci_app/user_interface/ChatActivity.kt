@@ -70,7 +70,7 @@ class ChatActivity : AppCompatActivity() {
 
     private fun connectWebSocket() {
         val request = Request.Builder()
-            .url("https://ready-ducks-tell.loca.lt/")
+            .url("https://whole-crabs-train.loca.lt/${currentUserId}")
             .build()
 
         val client = OkHttpClient.Builder()
@@ -97,7 +97,6 @@ class ChatActivity : AppCompatActivity() {
                     runOnUiThread {
                         messageAdapter.addMessage(message)
                         recyclerView.scrollToPosition(messageAdapter.itemCount - 1)
-
                         messageInput.text.clear()
                     }
                 }

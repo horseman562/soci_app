@@ -34,21 +34,18 @@ const app = uWS./*SSL*/App({
   },
   /* Handlers */
   open: (ws) => {
-    console.log('A WebSocket connected ' + ws.myData);
-    let url = ws.url.replace(/^\//, '');
-    let urls = url.split("/");
+    console.log('A WebSocket connected with URL: ' + ws.url);
+     
+    // Extract user ID from URL (assuming it's in the format /23)
+    const userId = ws.url.substring(1); // Removes the leading "/"
 
-    console.log(urls)
+    console.log("Extracted User ID:", userId);
 
-    // akan guna nanti //
-    /* console.log('Client connected');
+    // Store the WebSocket connection
+    users[userId] = ws;
+    ws.userId = userId;
 
-        const userId = req.getQuery(); // user_id=1
-        users[userId] = ws;
-        ws.userId = userId;
-
-        ws.send(JSON.stringify({ type: 'welcome', message: 'Connected to WebSocket!' })); */
-    //
+    console.log(users)
 
   },
   message: async  (ws, message, isBinary) => {
@@ -57,6 +54,7 @@ const app = uWS./*SSL*/App({
     try {
       // Convert Buffer to String
       const msg = Buffer.from(message).toString();
+      const token = "30|XYRSqdwtTuYt5jzN3ihDUY0EiCiqBgtfUd4Tjt1V3d548cad";
       console.log('Received:', msg);
 
       // Parse JSON safely
@@ -70,34 +68,46 @@ const app = uWS./*SSL*/App({
           return;
       }
 
+      // Fetch chat details
+      const chatDetailResponse = await axios.get(
+        `http://2f81-42-153-134-3.ngrok-free.app/api/chat-detail?chat_id=${data.chat_id}&sender_id=${data.sender_id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      
+      // Extract receiver_id
+      const receiver_id = chatDetailResponse.data.receiver_id;
+
       // Check if receiver is online
-      const receiverWs = users[data.receiver_id];
+      const receiverWs = users[receiver_id];
+  
 
       if (receiverWs) {
+          console.log("user is online")
           // If online, send the message immediately
           receiverWs.send(JSON.stringify({
-              type: 'message',
-              sender: ws.userId,
-              message: data.message
+            type: 'message',
+            receiver_id: receiver_id,
+            sender_id: data.sender_id,
+            message: data.message
           }));
+
+          // Send acknowledgment back to the sender
+          ws.send(JSON.stringify({
+            type: 'message',
+            receiver_id: receiver_id,
+            sender_id: data.sender_id,
+            message: data.message,
+            //status: 'delivered'
+        }));
+          
       } else {
+            console.log("user is offline")
             // If offline, check if the user exists in the database
             try { 
-              const token = "30|XYRSqdwtTuYt5jzN3ihDUY0EiCiqBgtfUd4Tjt1V3d548cad";
-
-              // Fetch chat details
-              const chatDetailResponse = await axios.get(
-                `http://2f81-42-153-134-3.ngrok-free.app/api/chat-detail?chat_id=${data.chat_id}&sender_id=${data.sender_id}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${token}`
-                  }
-                }
-              );
-              
-              // Extract receiver_id
-              const receiver_id = chatDetailResponse.data.receiver_id;
-              
               // Fetch user details
               const userResponse = await axios.get(
                 `http://2f81-42-153-134-3.ngrok-free.app/api/check-user?user_id=${receiver_id}`,
