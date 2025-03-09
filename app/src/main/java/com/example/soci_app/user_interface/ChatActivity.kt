@@ -1,6 +1,7 @@
 package com.example.soci_app.user_interface
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.util.Log
 import android.widget.EditText
@@ -28,15 +29,22 @@ class ChatActivity : AppCompatActivity() {
 
     private var chatId: Int = 0
     private var userId: Int = 3 // Replace with actual user ID dynamically
+    //private var receiverId: Int = 0
     private val messages = mutableListOf<Message>()
     private var webSocket: WebSocket? = null
+    private lateinit var sharedPreferences: SharedPreferences
+    private var currentUserId: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_chat)
 
+        sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
+        currentUserId = sharedPreferences.getInt("USER_ID", 0)
+
         // Get chatId from intent
         chatId = intent.getIntExtra("chat_id", 0)
+        //receiverId = intent.getIntExtra("receiver_id", 0)
 
         // Initialize UI components
         recyclerView = findViewById(R.id.recyclerViewMessages)
@@ -44,7 +52,7 @@ class ChatActivity : AppCompatActivity() {
         sendButton = findViewById(R.id.sendButton)
 
         // Set up RecyclerView
-        messageAdapter = MessageAdapter(messages)
+        messageAdapter = MessageAdapter(messages, currentUserId)
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = messageAdapter
 
@@ -62,7 +70,7 @@ class ChatActivity : AppCompatActivity() {
 
     private fun connectWebSocket() {
         val request = Request.Builder()
-            .url("https://fine-terms-burn.loca.lt/")
+            .url("https://ready-ducks-tell.loca.lt/")
             .build()
 
         val client = OkHttpClient.Builder()
@@ -76,19 +84,21 @@ class ChatActivity : AppCompatActivity() {
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val json = JSONObject(text)
+                Log.d("WebSocket Message", "Connected to WebSocket message ${json}")
                 if (json.getString("type") == "message") {
                     val message = Message(
                         id = 0,
                         chat_id = chatId,
-                        sender_id = json.getInt("sender"),
+                        sender_id = json.getInt("sender_id"),
                         message = json.getString("message"),
                         created_at = "Now"
                     )
 
                     runOnUiThread {
-                        messages.add(message)
-                        messageAdapter.notifyItemInserted(messages.size - 1)
-                        recyclerView.scrollToPosition(messages.size - 1)
+                        messageAdapter.addMessage(message)
+                        recyclerView.scrollToPosition(messageAdapter.itemCount - 1)
+
+                        messageInput.text.clear()
                     }
                 }
             }
@@ -114,6 +124,7 @@ class ChatActivity : AppCompatActivity() {
         Log.e("Load MEssage", "Load MEssage ${chatId}")
         val sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
         val token = sharedPreferences.getString("AUTH_TOKEN", null) ?: ""
+
         val authHeader = "Bearer $token"
         Log.e("Load Token", "Load Token ${token}")
         RetrofitClient.instance.getMessages(authHeader, chatId).enqueue(object : Callback<List<Message>> {
@@ -139,21 +150,29 @@ class ChatActivity : AppCompatActivity() {
 
     private fun sendMessage() {
         val messageText = messageInput.text.toString().trim()
+        val sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
+        val userId = sharedPreferences.getInt("USER_ID", -1) ?: ""
+
         if (messageText.isEmpty()) return
 
         val jsonMessage = JSONObject().apply {
+            put("chat_id", chatId)
             put("type", "message")
             put("message", messageText)
-            put("receiverId", 2) // Change dynamically
+            put("sender_id", userId)
+            //put("receiver_id", receiverId) // Change dynamically
         }
+
+//        val message = Message(
+//            id = 0,
+//            chat_id = chatId,
+//            sender_id = json.getInt("sender_id"),
+//            message = json.getString("message"),
+//            created_at = "Now"
+//        )
 
         webSocket?.send(jsonMessage.toString())
 
-        val message = Message(0, chatId, userId, messageText, "Now")
-        messages.add(message)
-        messageAdapter.notifyItemInserted(messages.size - 1)
-        recyclerView.scrollToPosition(messages.size - 1)
 
-        messageInput.text.clear()
     }
 }

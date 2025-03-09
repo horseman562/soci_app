@@ -79,11 +79,12 @@ class HomeActivity : AppCompatActivity() {
                         // Get the logged-in user ID from SharedPreferences
                         val sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
                         val currentUserId = sharedPreferences.getInt("USER_ID", 0) // Default to 0 if not found
-
+                        Log.d("user id saved", "user id saved $currentUserId")
                         // Pass currentUserId to ChatListAdapter
                         chatRecyclerView.adapter = ChatListAdapter(chats, currentUserId) { chat ->
                             val intent = Intent(this@HomeActivity, ChatActivity::class.java)
                             intent.putExtra("chat_id", chat.id)
+                            intent.putExtra("receiver_id", chat.user2_id)
                             startActivity(intent)
                         }
 

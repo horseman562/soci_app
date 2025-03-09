@@ -55,10 +55,11 @@ class LoginActivity : AppCompatActivity() {
             override fun onResponse(call: Call<LoginResponse>, response: Response<LoginResponse>) {
                 if (response.isSuccessful) {
                     val token = response.body()?.access_token
+                    val userId = response.body()?.user?.id ?: -1
 
                     // Save token to SharedPreferences
                     val sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
-                    sharedPreferences.edit().putString("AUTH_TOKEN", token).apply()
+                    sharedPreferences.edit().putString("AUTH_TOKEN", token).putInt("USER_ID", userId).apply()
 
                     Toast.makeText(this@LoginActivity, "Login Successful!", Toast.LENGTH_SHORT).show()
                     Log.d("TOKEN", "Bearer $token")
