@@ -30,5 +30,14 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:src="@android:drawable/ic_menu_send" />
+
+        <!-- Video Call Button -->
+        <ImageButton
+            android:id="@+id/videoCallButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@android:drawable/ic_menu_call"
+            android:contentDescription="Start Video Call"
+            android:layout_marginStart="8dp"/>
     </LinearLayout>
 </LinearLayout>

@@ -1,6 +1,7 @@
 package com.example.soci_app.user_interface
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.util.Log
@@ -26,6 +27,7 @@ class ChatActivity : AppCompatActivity() {
     private lateinit var messageAdapter: MessageAdapter
     private lateinit var messageInput: EditText
     private lateinit var sendButton: ImageButton
+    private lateinit var videoCallButton: ImageButton
 
     private var chatId: Int = 0
     private var userId: Int = 3 // Replace with actual user ID dynamically
@@ -34,6 +36,7 @@ class ChatActivity : AppCompatActivity() {
     private var webSocket: WebSocket? = null
     private lateinit var sharedPreferences: SharedPreferences
     private var currentUserId: Int = 0
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,6 +53,7 @@ class ChatActivity : AppCompatActivity() {
         recyclerView = findViewById(R.id.recyclerViewMessages)
         messageInput = findViewById(R.id.messageInput)
         sendButton = findViewById(R.id.sendButton)
+        videoCallButton = findViewById(R.id.videoCallButton)
 
         // Set up RecyclerView
         messageAdapter = MessageAdapter(messages, currentUserId)
@@ -65,6 +69,14 @@ class ChatActivity : AppCompatActivity() {
         // Send new message
         sendButton.setOnClickListener {
             sendMessage()
+        }
+
+        // video call
+        videoCallButton.setOnClickListener {
+            val intent = Intent(this, VideoCallActivity::class.java)
+            intent.putExtra("chat_id", chatId) // Pass chat ID
+            //intent.putExtra("receiver_id", receiverId) // Pass receiver ID
+            startActivity(intent)
         }
     }
 
