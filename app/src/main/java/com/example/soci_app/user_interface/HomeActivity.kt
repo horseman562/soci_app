@@ -84,7 +84,12 @@ class HomeActivity : AppCompatActivity() {
                         chatRecyclerView.adapter = ChatListAdapter(chats, currentUserId) { chat ->
                             val intent = Intent(this@HomeActivity, ChatActivity::class.java)
                             intent.putExtra("chat_id", chat.id)
-                            intent.putExtra("receiver_id", chat.user2_id)
+                            if(currentUserId == chat.user2_id) {
+                                intent.putExtra("receiver_id", chat.user1_id)
+                            } else {
+                                intent.putExtra("receiver_id", chat.user2_id)
+                            }
+
                             startActivity(intent)
                         }
 

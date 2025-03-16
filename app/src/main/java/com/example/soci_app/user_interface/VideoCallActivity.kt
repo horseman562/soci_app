@@ -1,5 +1,6 @@
 package com.example.soci_app.user_interface
 
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -8,6 +9,7 @@ import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import com.example.soci_app.R
 import okhttp3.*
+import org.json.JSONObject
 import org.webrtc.*
 import java.net.URI
 import java.net.URISyntaxException
@@ -28,21 +30,26 @@ class VideoCallActivity : AppCompatActivity() {
 
     private var chatId: Int = 0
     private var receiverId: Int = 0
-    private var userId: Int = 1  // Replace with actual logged-in user ID
+    private var userId: Int = 0//Replace with actual logged-in user ID
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_video_call)
 
         // Get Chat & Receiver ID
+        val sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
         chatId = intent.getIntExtra("chat_id", 0)
         receiverId = intent.getIntExtra("receiver_id", 0)
-
+        userId = sharedPreferences.getInt("USER_ID", 0)
+        Log.e("WebRTC", "ULogged in " + userId)
+        Log.e("WebRTC", "RLogged in " + receiverId)
         // Initialize UI Elements
         localVideoView = findViewById(R.id.localVideoView)
         remoteVideoView = findViewById(R.id.remoteVideoView)
         startCallButton = findViewById(R.id.startCallButton)
         endCallButton = findViewById(R.id.endCallButton)
+
+        //checkPermissions()
 
         // Initialize WebRTC
         initializeWebRTC()
@@ -52,6 +59,16 @@ class VideoCallActivity : AppCompatActivity() {
 
         startCallButton.setOnClickListener { startCall() }
         endCallButton.setOnClickListener { endCall() }
+    }
+
+    private fun checkPermissions() {
+        val permissions = arrayOf(
+            android.Manifest.permission.CAMERA,
+            android.Manifest.permission.RECORD_AUDIO
+        )
+        if (permissions.any { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }) {
+            requestPermissions(permissions, 1001)
+        }
     }
 
     private fun initializeWebRTC() {
@@ -143,7 +160,7 @@ class VideoCallActivity : AppCompatActivity() {
 
     private fun connectToSignalingServer() {
         val request = Request.Builder()
-            .url("https://two-spies-juggle.loca.lt")  // Replace with actual WebSocket URL
+            .url("https://salty-results-visit.loca.lt")  // Replace with actual WebSocket URL
             .build()
 
         val client = OkHttpClient.Builder()
@@ -162,20 +179,172 @@ class VideoCallActivity : AppCompatActivity() {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 Log.d("WebRTC", "Received WebSocket Message: $text")
 
-                // Handle signaling messages here
+                val message = JSONObject(text)
+                when (message.getString("type")) {
+                    "offer" -> handleOffer(message)
+                    "answer" -> handleAnswer(message)
+                    "candidate" -> handleCandidate(message)
+                }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e("WebRTC", "WebSocket connection error: ${t.message}")
+                Log.e("WebRTC", "WebSocket connection error vide: ${t.message}")
             }
         })
     }
 
+    private fun handleOffer(message: JSONObject) {
+        Log.d("WebRTC", "Received Offer SDP: ${message.getString("sdp")}")
+        peerConnection = createPeerConnection()
+
+        val remoteSdp = SessionDescription(SessionDescription.Type.OFFER, message.getString("sdp"))
+        peerConnection?.setRemoteDescription(object : SdpObserver {
+            override fun onSetSuccess() {
+                Log.d("WebRTC", "setRemoteDescription SUCCESS for Offer")
+
+                peerConnection?.createAnswer(object : SdpObserver {
+                    override fun onCreateSuccess(sdp: SessionDescription) {
+                        Log.d("WebRTC", "Answer created: ${sdp.description}")
+
+                        peerConnection?.setLocalDescription(object : SdpObserver {
+                            override fun onSetSuccess() {
+                                Log.d("WebRTC", "setLocalDescription SUCCESS for Answer")
+                                val answerMessage = JSONObject().apply {
+                                    put("type", "answer")
+                                    put("target", message.getInt("initiatorId"))
+                                    put("sdp", sdp.description)
+                                }.toString()
+                                webSocket?.send(answerMessage)
+                            }
+
+                            override fun onSetFailure(error: String?) {
+                                Log.e("WebRTC", "setLocalDescription FAILED for Answer: $error")
+                            }
+
+                            override fun onCreateSuccess(sdp: SessionDescription?) {}
+                            override fun onCreateFailure(error: String?) {}
+                        }, sdp)
+                    }
+
+                    override fun onCreateFailure(error: String?) {
+                        Log.e("WebRTC", "createAnswer FAILED: $error")
+                    }
+
+                    override fun onSetSuccess() {}
+                    override fun onSetFailure(error: String?) {}
+                }, MediaConstraints())
+            }
+
+            override fun onSetFailure(error: String?) {
+                Log.e("WebRTC", "setRemoteDescription FAILED: $error")
+            }
+
+            override fun onCreateSuccess(sdp: SessionDescription?) {}
+            override fun onCreateFailure(error: String?) {}
+        }, remoteSdp)
+    }
+
+
+    private fun handleAnswer(message: JSONObject) {
+        val remoteSdp = SessionDescription(SessionDescription.Type.ANSWER, message.getString("sdp"))
+        Log.d("WebRTC", "Received Answer SDP: ${message.getString("sdp")}")
+
+        peerConnection?.setRemoteDescription(object : SdpObserver {
+            override fun onSetSuccess() {
+                Log.d("WebRTC", "setRemoteDescription SUCCESS for Answer")
+            }
+
+            override fun onSetFailure(error: String?) {
+                Log.e("WebRTC", "setRemoteDescription FAILED for Answer: $error")
+            }
+
+            override fun onCreateSuccess(sdp: SessionDescription?) {}
+            override fun onCreateFailure(error: String?) {}
+        }, remoteSdp)
+    }
+
+
+    private fun handleCandidate(message: JSONObject) {
+        val iceCandidate = IceCandidate(
+            message.getString("sdpMid"),
+            message.getInt("sdpMLineIndex"),
+            message.getString("candidate")
+        )
+
+        Log.d("WebRTC", "Adding ICE Candidate: $iceCandidate")
+        peerConnection?.addIceCandidate(iceCandidate)
+    }
+
+
+    private fun createPeerConnection(): PeerConnection? {
+        val iceServers = listOf(
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+        )
+        val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
+        return peerConnectionFactory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
+
+            override fun onIceCandidate(iceCandidate: IceCandidate) {
+                Log.d("WebRTC", "New ICE Candidate: ${iceCandidate.sdp}")
+
+                // Send ICE candidate to the remote peer via WebSocket
+                val iceMessage = JSONObject().apply {
+                    put("type", "candidate")
+                    put("target", receiverId)
+                    put("candidate", iceCandidate.sdp)
+                    put("sdpMid", iceCandidate.sdpMid)
+                    put("sdpMLineIndex", iceCandidate.sdpMLineIndex)
+                }.toString()
+
+                webSocket?.send(iceMessage)
+            }
+
+            override fun onAddStream(stream: MediaStream) {
+                runOnUiThread {
+                    stream.videoTracks.firstOrNull()?.addSink(remoteVideoView)
+                }
+            }
+
+            override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState) {
+                Log.d("WebRTC", "ICE Connection State changed: $newState")
+            }
+            override fun onIceConnectionReceivingChange(p0: Boolean) {}
+            override fun onDataChannel(dataChannel: DataChannel) {}
+            override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) {}
+            override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) {
+                Log.d("WebRTC", "ICE Gathering State changed: $newState")
+            }
+            override fun onSignalingChange(newState: PeerConnection.SignalingState) {}
+            override fun onRemoveStream(stream: MediaStream?) {}
+            override fun onRenegotiationNeeded() {}
+            override fun onTrack(transceiver: RtpTransceiver?) {}
+        })
+    }
+
     private fun startCall() {
-        peerConnection = peerConnectionFactory.createPeerConnection(PeerConnection.RTCConfiguration(listOf()), object : PeerConnection.Observer {
-            override fun onIceCandidate(candidate: IceCandidate) {
-                val candidateMessage = """{"type": "candidate", "target": "$receiverId", "candidate": "${candidate.sdp}"}"""
-                webSocket?.send(candidateMessage)
+        val iceServers = listOf(
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+        )
+        val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
+        peerConnection = peerConnectionFactory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
+
+            val iceServers = listOf(
+                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+            )
+            val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
+
+            override fun onIceCandidate(iceCandidate: IceCandidate) {
+                Log.d("WebRTC", "New ICE Candidate: ${iceCandidate.sdp}")
+
+                // Send ICE candidate to the remote peer via WebSocket
+                val iceMessage = JSONObject().apply {
+                    put("type", "candidate")
+                    put("target", receiverId)
+                    put("candidate", iceCandidate.sdp)
+                    put("sdpMid", iceCandidate.sdpMid)
+                    put("sdpMLineIndex", iceCandidate.sdpMLineIndex)
+                }.toString()
+
+                webSocket?.send(iceMessage)
             }
 
             override fun onAddStream(stream: MediaStream) {
@@ -205,15 +374,33 @@ class VideoCallActivity : AppCompatActivity() {
 
         peerConnection?.createOffer(object : SdpObserver {
             override fun onCreateSuccess(sdp: SessionDescription) {
-                peerConnection?.setLocalDescription(this, sdp)
-                val offerMessage = """{"type": "offer", "target": "$receiverId", "sdp": "${sdp.description}"}"""
-                webSocket?.send(offerMessage)
+                Log.d("WebRTC", "Offer created: ${sdp.description}")
+                peerConnection?.setLocalDescription(object : SdpObserver {
+                    override fun onSetSuccess() {
+                        Log.d("WebRTC", "setLocalDescription SUCCESS for Offer")
+                        val offerMessage = JSONObject().apply {
+                            put("type", "offer")
+                            put("target", receiverId)
+                            put("initiatorId", userId)
+                            put("sdp", sdp.description)
+                        }.toString()
+                        webSocket?.send(offerMessage)
+                    }
+
+                    override fun onSetFailure(error: String?) {
+                        Log.e("WebRTC", "setLocalDescription FAILED for Offer: $error")
+                    }
+
+                    override fun onCreateSuccess(sdp: SessionDescription?) {}
+                    override fun onCreateFailure(error: String?) {}
+                }, sdp)
+            }
+
+            override fun onCreateFailure(error: String?) {
+                Log.e("WebRTC", "createOffer FAILED: $error")
             }
 
             override fun onSetSuccess() {}
-
-            override fun onCreateFailure(error: String?) {}
-
             override fun onSetFailure(error: String?) {}
         }, MediaConstraints())
     }

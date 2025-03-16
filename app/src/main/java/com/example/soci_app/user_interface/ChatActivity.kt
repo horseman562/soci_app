@@ -31,7 +31,7 @@ class ChatActivity : AppCompatActivity() {
 
     private var chatId: Int = 0
     private var userId: Int = 3 // Replace with actual user ID dynamically
-    //private var receiverId: Int = 0
+    private var receiverId: Int = 0
     private val messages = mutableListOf<Message>()
     private var webSocket: WebSocket? = null
     private lateinit var sharedPreferences: SharedPreferences
@@ -47,7 +47,7 @@ class ChatActivity : AppCompatActivity() {
 
         // Get chatId from intent
         chatId = intent.getIntExtra("chat_id", 0)
-        //receiverId = intent.getIntExtra("receiver_id", 0)
+        receiverId = intent.getIntExtra("receiver_id", 0)
 
         // Initialize UI components
         recyclerView = findViewById(R.id.recyclerViewMessages)
@@ -75,7 +75,7 @@ class ChatActivity : AppCompatActivity() {
         videoCallButton.setOnClickListener {
             val intent = Intent(this, VideoCallActivity::class.java)
             intent.putExtra("chat_id", chatId) // Pass chat ID
-            //intent.putExtra("receiver_id", receiverId) // Pass receiver ID
+            intent.putExtra("receiver_id", receiverId) // Pass receiver ID
             startActivity(intent)
         }
     }
