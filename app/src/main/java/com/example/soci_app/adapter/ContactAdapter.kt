@@ -9,9 +9,11 @@ import com.example.soci_app.R
 import com.example.soci_app.model.Contact
 
 class ContactAdapter(
-    private val contacts: List<Contact>,
+    private var contacts: MutableList<Contact>,
     private val onContactClick: (Contact) -> Unit
 ) : RecyclerView.Adapter<ContactAdapter.ContactViewHolder>() {
+
+    private var filteredContacts: MutableList<Contact> = contacts.toMutableList()
 
     class ContactViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val nameTextView: TextView = itemView.findViewById(R.id.contactName)
@@ -25,7 +27,7 @@ class ContactAdapter(
     }
 
     override fun onBindViewHolder(holder: ContactViewHolder, position: Int) {
-        val contact = contacts[position]
+        val contact = filteredContacts[position]
         holder.nameTextView.text = contact.name
         holder.phoneTextView.text = "${contact.phoneNumbers.size} number(s)"
         
@@ -34,5 +36,26 @@ class ContactAdapter(
         }
     }
 
-    override fun getItemCount(): Int = contacts.size
+    override fun getItemCount(): Int = filteredContacts.size
+
+    fun filter(query: String) {
+        filteredContacts.clear()
+        if (query.isEmpty()) {
+            filteredContacts.addAll(contacts)
+        } else {
+            filteredContacts.addAll(contacts.filter { contact ->
+                contact.name.contains(query, ignoreCase = true) ||
+                contact.phoneNumbers.any { phone -> phone.contains(query) }
+            })
+        }
+        notifyDataSetChanged()
+    }
+
+    fun updateContacts(newContacts: List<Contact>) {
+        contacts.clear()
+        contacts.addAll(newContacts)
+        filteredContacts.clear()
+        filteredContacts.addAll(newContacts)
+        notifyDataSetChanged()
+    }
 }

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.database.Cursor
 import android.os.Bundle
 import android.provider.ContactsContract
+import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -19,6 +20,7 @@ import com.example.soci_app.model.Contact
 class ContactListActivity : AppCompatActivity() {
 
     private lateinit var contactRecyclerView: RecyclerView
+    private lateinit var contactAdapter: ContactAdapter
     private val contacts = mutableListOf<Contact>()
     private val REQUEST_READ_CONTACTS = 1
 
@@ -27,7 +29,18 @@ class ContactListActivity : AppCompatActivity() {
         setContentView(R.layout.activity_contact_list)
 
         contactRecyclerView = findViewById(R.id.contactRecyclerView)
+        
         contactRecyclerView.layoutManager = LinearLayoutManager(this)
+        
+        // Initialize adapter
+        contactAdapter = ContactAdapter(mutableListOf()) { contact ->
+            val intent = Intent(this, ContactDetailActivity::class.java)
+            intent.putExtra("contact_name", contact.name)
+            intent.putStringArrayListExtra("contact_phones", ArrayList(contact.phoneNumbers))
+            startActivity(intent)
+        }
+        contactRecyclerView.adapter = contactAdapter
+        
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) 
             == PackageManager.PERMISSION_GRANTED) {
@@ -52,6 +65,7 @@ class ContactListActivity : AppCompatActivity() {
     }
 
     private fun loadContacts() {
+        Log.d("ContactList", "Starting to load contacts...")
         contacts.clear()
         
         val contactMap = mutableMapOf<String, MutableList<String>>()
@@ -62,13 +76,20 @@ class ContactListActivity : AppCompatActivity() {
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
         )
 
+        Log.d("ContactList", "Cursor: $cursor")
+
         cursor?.use {
             val nameIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
             val phoneIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            
+            Log.d("ContactList", "Name index: $nameIndex, Phone index: $phoneIndex")
+            Log.d("ContactList", "Cursor count: ${it.count}")
 
             while (it.moveToNext()) {
                 val name = it.getString(nameIndex) ?: "Unknown"
                 var phone = it.getString(phoneIndex) ?: ""
+
+                Log.d("ContactList", "Raw contact: Name='$name', Phone='$phone'")
 
                 // Normalize phone number (remove spaces, dashes)
                 phone = phone.replace("\\s".toRegex(), "").replace("-", "")
@@ -81,6 +102,7 @@ class ContactListActivity : AppCompatActivity() {
                     } else {
                         contactMap[name] = mutableListOf(phone)
                     }
+                    Log.d("ContactList", "Added contact: $name with phone $phone")
                 }
             }
         }
@@ -90,11 +112,21 @@ class ContactListActivity : AppCompatActivity() {
             contacts.add(Contact(name, phoneNumbers))
         }
 
-        contactRecyclerView.adapter = ContactAdapter(contacts) { contact ->
-            val intent = Intent(this, ContactDetailActivity::class.java)
-            intent.putExtra("contact_name", contact.name)
-            intent.putStringArrayListExtra("contact_phones", ArrayList(contact.phoneNumbers))
-            startActivity(intent)
+        Log.d("ContactList", "Total contacts loaded: ${contacts.size}")
+
+        // Add fallback for testing if no real contacts found
+        if (contacts.isEmpty()) {
+            Log.w("ContactList", "No contacts found, adding test contact")
+            Toast.makeText(this, "No contacts found on device", Toast.LENGTH_LONG).show()
+            
+            // Add a test contact for debugging
+            contacts.add(Contact("Test Contact", listOf("1234567890", "0987654321")))
         }
+
+        // Update adapter with new contacts
+        contactAdapter.updateContacts(contacts)
+        
+        Log.d("ContactList", "Adapter updated, item count: ${contactAdapter.itemCount}")
     }
+
 }

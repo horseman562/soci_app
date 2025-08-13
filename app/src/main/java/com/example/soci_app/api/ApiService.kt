@@ -33,6 +33,17 @@ interface ApiService {
 
     @POST("chats/{chatId}/messages")
     fun sendMessage(@Path("chatId") chatId: Int, @Body message: Message): Call<Message>
+
+    @GET("users/check-phone")
+    fun checkUserByPhone(
+        @Header("Authorization") token: String,
+        @retrofit2.http.Query("phone") phoneNumber: String
+    ): Call<UserCheckResponse>
 }
 
 data class CreateChatRequest(val user1_id: Int, val user2_id: Int)
+
+data class UserCheckResponse(
+    val exists: Boolean,
+    val user: User?
+)
