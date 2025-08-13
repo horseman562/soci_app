@@ -82,7 +82,7 @@ class ChatActivity : AppCompatActivity() {
 
     private fun connectWebSocket() {
         val request = Request.Builder()
-            .url("https://whole-crabs-train.loca.lt/${currentUserId}")
+            .url("https://evil-snails-draw.loca.lt/${currentUserId}")
             .build()
 
         val client = OkHttpClient.Builder()

@@ -54,7 +54,7 @@ const app = uWS./*SSL*/App({
     try {
       // Convert Buffer to String
       const msg = Buffer.from(message).toString();
-      const token = "30|XYRSqdwtTuYt5jzN3ihDUY0EiCiqBgtfUd4Tjt1V3d548cad";
+      const token = "1|JSV7Ksi4M5V5uD09PwC0AUQSO9ZMVcAoOI27K8dW61d0d545";
       console.log('Received:', msg);
 
       // Parse JSON safely
@@ -70,7 +70,7 @@ const app = uWS./*SSL*/App({
 
       // Fetch chat details
       const chatDetailResponse = await axios.get(
-        `http://2f81-42-153-134-3.ngrok-free.app/api/chat-detail?chat_id=${data.chat_id}&sender_id=${data.sender_id}`,
+        `https://a261a19ea36e.ngrok-free.app/api/chat-detail?chat_id=${data.chat_id}&sender_id=${data.sender_id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -110,7 +110,7 @@ const app = uWS./*SSL*/App({
             try { 
               // Fetch user details
               const userResponse = await axios.get(
-                `http://2f81-42-153-134-3.ngrok-free.app/api/check-user?user_id=${receiver_id}`,
+                `https://a261a19ea36e.ngrok-free.app/api/check-user?user_id=${receiver_id}`,
                 {
                   headers: {
                     Authorization: `Bearer ${token}`

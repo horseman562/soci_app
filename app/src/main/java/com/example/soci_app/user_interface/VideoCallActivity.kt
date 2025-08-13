@@ -27,6 +27,8 @@ class VideoCallActivity : AppCompatActivity() {
     private lateinit var eglBase: EglBase
     private var videoCapturer: CameraVideoCapturer? = null
     private var webSocket: WebSocket? = null
+    private var localVideoTrack: VideoTrack? = null
+    private var localAudioTrack: AudioTrack? = null
 
     private var chatId: Int = 0
     private var receiverId: Int = 0
@@ -49,10 +51,18 @@ class VideoCallActivity : AppCompatActivity() {
         startCallButton = findViewById(R.id.startCallButton)
         endCallButton = findViewById(R.id.endCallButton)
 
-        //checkPermissions()
+        checkPermissions()
+        // Initialize EGL context for video rendering
+        eglBase = EglBase.create()
 
-        // Initialize WebRTC
-        initializeWebRTC()
+        // Initialize WebRTC only if permissions are already granted
+        val permissions = arrayOf(
+            android.Manifest.permission.CAMERA,
+            android.Manifest.permission.RECORD_AUDIO
+        )
+        if (permissions.all { checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }) {
+            initializeWebRTC()
+        }
 
         // Connect to WebSocket Signaling Server
         connectToSignalingServer()
@@ -68,13 +78,32 @@ class VideoCallActivity : AppCompatActivity() {
         )
         if (permissions.any { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }) {
             requestPermissions(permissions, 1001)
+        } else {
+            Log.d("WebRTC", "All permissions granted, initializing camera")
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1001) {
+            val allGranted = grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }
+            if (allGranted) {
+                Log.d("WebRTC", "Permissions granted, reinitializing WebRTC")
+                // Permissions granted, initialize WebRTC again
+                initializeWebRTC()
+            } else {
+                Log.e("WebRTC", "Camera/microphone permissions denied")
+                android.widget.Toast.makeText(this, "Camera and microphone permissions are required for video calling", android.widget.Toast.LENGTH_LONG).show()
+                finish()
+            }
         }
     }
 
     private fun initializeWebRTC() {
-        // Initialize EGL context for video rendering
-        eglBase = EglBase.create()
-
         // Initialize WebRTC
         val options = PeerConnectionFactory.InitializationOptions.builder(this)
             .setEnableInternalTracer(true)
@@ -97,7 +126,7 @@ class VideoCallActivity : AppCompatActivity() {
         Handler(Looper.getMainLooper()).postDelayed({
             try {
                 val videoSource = peerConnectionFactory.createVideoSource(videoCapturer!!.isScreencast)
-                val videoTrack = peerConnectionFactory.createVideoTrack("videoTrack", videoSource)
+                localVideoTrack = peerConnectionFactory.createVideoTrack("videoTrack", videoSource)
 
                 videoCapturer!!.initialize(
                     SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext),
@@ -109,13 +138,21 @@ class VideoCallActivity : AppCompatActivity() {
                 localVideoView.setMirror(true)
                 localVideoView.setEnableHardwareScaler(true)
 
-                videoTrack.addSink(localVideoView)
+                // Initialize remote video view too
+                remoteVideoView.init(eglBase.eglBaseContext, null)
+                remoteVideoView.setMirror(false)
+                remoteVideoView.setEnableHardwareScaler(true)
+                Log.d("WebRTC", "✅ Remote video view initialized")
+
+                localVideoTrack?.addSink(localVideoView)
 
                 videoCapturer?.startCapture(1280, 720, 30)
                 Log.d("WebRTC", "Camera capture started successfully")
 
-                val localStream = peerConnectionFactory.createLocalMediaStream("localStream")
-                localStream.addTrack(videoTrack)
+                // Create audio track
+                val audioConstraints = MediaConstraints()
+                val audioSource = peerConnectionFactory.createAudioSource(audioConstraints)
+                localAudioTrack = peerConnectionFactory.createAudioTrack("audioTrack", audioSource)
 
             } catch (e: Exception) {
                 Log.e("WebRTC", "Error starting video capture: ${e.message}")
@@ -160,7 +197,7 @@ class VideoCallActivity : AppCompatActivity() {
 
     private fun connectToSignalingServer() {
         val request = Request.Builder()
-            .url("https://salty-results-visit.loca.lt")  // Replace with actual WebSocket URL
+            .url("https://quick-planes-wave.loca.lt")  // Replace with actual WebSocket URL
             .build()
 
         val client = OkHttpClient.Builder()
@@ -201,6 +238,9 @@ class VideoCallActivity : AppCompatActivity() {
         peerConnection?.setRemoteDescription(object : SdpObserver {
             override fun onSetSuccess() {
                 Log.d("WebRTC", "setRemoteDescription SUCCESS for Offer")
+                
+                // Add local stream BEFORE creating answer to generate ICE candidates  
+                addLocalStreamToPeerConnection()
 
                 peerConnection?.createAnswer(object : SdpObserver {
                     override fun onCreateSuccess(sdp: SessionDescription) {
@@ -209,9 +249,11 @@ class VideoCallActivity : AppCompatActivity() {
                         peerConnection?.setLocalDescription(object : SdpObserver {
                             override fun onSetSuccess() {
                                 Log.d("WebRTC", "setLocalDescription SUCCESS for Answer")
+                                Log.d("WebRTC", "🔥 Now expecting ICE candidates to be generated...")
                                 val answerMessage = JSONObject().apply {
                                     put("type", "answer")
                                     put("target", message.getInt("initiatorId"))
+                                    put("userId", userId) // Add sender ID
                                     put("sdp", sdp.description)
                                 }.toString()
                                 webSocket?.send(answerMessage)
@@ -275,32 +317,55 @@ class VideoCallActivity : AppCompatActivity() {
         peerConnection?.addIceCandidate(iceCandidate)
     }
 
+    private fun getIceServers(): List<PeerConnection.IceServer> {
+        return listOf(
+            // Multiple reliable STUN servers
+            PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("stun:stun.cloudflare.com:3478").createIceServer(),
+            PeerConnection.IceServer.builder("stun:stun.nextcloud.com:443").createIceServer(),
+
+            // TURN server for NAT traversal
+            PeerConnection.IceServer.builder("turn:numb.viagenie.ca")
+                .setUsername("webrtc@live.com")
+                .setPassword("muazkh")
+                .createIceServer()
+        )
+    }
 
     private fun createPeerConnection(): PeerConnection? {
-        val iceServers = listOf(
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-        )
+        val iceServers = getIceServers()
+
+
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
         return peerConnectionFactory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
 
             override fun onIceCandidate(iceCandidate: IceCandidate) {
-                Log.d("WebRTC", "New ICE Candidate: ${iceCandidate.sdp}")
+                Log.d("WebRTC", "New ICE Candidate Generated: ${iceCandidate.sdp}")
+                Log.d("WebRTC", "ICE Candidate sdpMid: ${iceCandidate.sdpMid}, sdpMLineIndex: ${iceCandidate.sdpMLineIndex}")
 
                 // Send ICE candidate to the remote peer via WebSocket
                 val iceMessage = JSONObject().apply {
                     put("type", "candidate")
                     put("target", receiverId)
+                    put("userId", userId) // Add sender ID
                     put("candidate", iceCandidate.sdp)
                     put("sdpMid", iceCandidate.sdpMid)
                     put("sdpMLineIndex", iceCandidate.sdpMLineIndex)
                 }.toString()
 
+                Log.d("WebRTC", "Sending ICE candidate to userId=$receiverId: $iceMessage")
                 webSocket?.send(iceMessage)
+                Log.d("WebRTC", "ICE candidate sent via WebSocket")
             }
 
             override fun onAddStream(stream: MediaStream) {
+                Log.d("WebRTC", "📺 Remote stream received with ${stream.videoTracks.size} video tracks")
                 runOnUiThread {
-                    stream.videoTracks.firstOrNull()?.addSink(remoteVideoView)
+                    stream.videoTracks.firstOrNull()?.let { videoTrack ->
+                        videoTrack.addSink(remoteVideoView)
+                        Log.d("WebRTC", "✅ Remote video track added to view")
+                    } ?: Log.w("WebRTC", "⚠️ No video track in remote stream")
                 }
             }
 
@@ -312,39 +377,52 @@ class VideoCallActivity : AppCompatActivity() {
             override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) {}
             override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) {
                 Log.d("WebRTC", "ICE Gathering State changed: $newState")
+                when (newState) {
+                    PeerConnection.IceGatheringState.NEW -> Log.d("WebRTC", "ICE Gathering: NEW - Starting...")
+                    PeerConnection.IceGatheringState.GATHERING -> Log.d("WebRTC", "ICE Gathering: GATHERING - Collecting candidates...")
+                    PeerConnection.IceGatheringState.COMPLETE -> Log.d("WebRTC", "ICE Gathering: COMPLETE - All candidates collected")
+                }
             }
             override fun onSignalingChange(newState: PeerConnection.SignalingState) {}
             override fun onRemoveStream(stream: MediaStream?) {}
             override fun onRenegotiationNeeded() {}
-            override fun onTrack(transceiver: RtpTransceiver?) {}
+            override fun onTrack(transceiver: RtpTransceiver?) {
+                Log.d("WebRTC", "🎬 onTrack called: ${transceiver?.receiver?.track()?.kind()}")
+                transceiver?.receiver?.track()?.let { track ->
+                    if (track.kind() == "video") {
+                        runOnUiThread {
+                            val videoTrack = track as VideoTrack
+                            videoTrack.addSink(remoteVideoView)
+                            Log.d("WebRTC", "✅ Remote video track connected via onTrack")
+                        }
+                    }
+                }
+            }
         })
     }
 
     private fun startCall() {
-        val iceServers = listOf(
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-        )
+        val iceServers = getIceServers()
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
         peerConnection = peerConnectionFactory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
 
-            val iceServers = listOf(
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-            )
-            val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
-
             override fun onIceCandidate(iceCandidate: IceCandidate) {
-                Log.d("WebRTC", "New ICE Candidate: ${iceCandidate.sdp}")
+                Log.d("WebRTC", "Nated: ${iceCandidate.sdp}")
+                Log.d("WebRTC", "ICE Candidate sdpMid: ${iceCandidate.sdpMid}, sdpMLineIndex: ${iceCandidate.sdpMLineIndex}")
 
                 // Send ICE candidate to the remote peer via WebSocket
                 val iceMessage = JSONObject().apply {
                     put("type", "candidate")
                     put("target", receiverId)
+                    put("userId", userId) // Add sender ID
                     put("candidate", iceCandidate.sdp)
                     put("sdpMid", iceCandidate.sdpMid)
                     put("sdpMLineIndex", iceCandidate.sdpMLineIndex)
                 }.toString()
 
+                Log.d("WebRTC", "Sending ICE candidate to userId=$receiverId: $iceMessage")
                 webSocket?.send(iceMessage)
+                Log.d("WebRTC", "ICE candidate sent via WebSocket")
             }
 
             override fun onAddStream(stream: MediaStream) {
@@ -372,12 +450,19 @@ class VideoCallActivity : AppCompatActivity() {
             override fun onTrack(transceiver: RtpTransceiver?) {}
         })
 
-        peerConnection?.createOffer(object : SdpObserver {
-            override fun onCreateSuccess(sdp: SessionDescription) {
+        // Add local stream BEFORE creating offer to generate ICE candidates
+        addLocalStreamToPeerConnection()
+        
+        // Add small delay to ensure tracks are properly added
+        Handler(Looper.getMainLooper()).postDelayed({
+            Log.d("WebRTC", "Creating offer after adding tracks...")
+            peerConnection?.createOffer(object : SdpObserver {
+                override fun onCreateSuccess(sdp: SessionDescription) {
                 Log.d("WebRTC", "Offer created: ${sdp.description}")
                 peerConnection?.setLocalDescription(object : SdpObserver {
                     override fun onSetSuccess() {
                         Log.d("WebRTC", "setLocalDescription SUCCESS for Offer")
+                        Log.d("WebRTC", "🔥 Now expecting ICE candidates to be generated...")
                         val offerMessage = JSONObject().apply {
                             put("type", "offer")
                             put("target", receiverId)
@@ -403,6 +488,30 @@ class VideoCallActivity : AppCompatActivity() {
             override fun onSetSuccess() {}
             override fun onSetFailure(error: String?) {}
         }, MediaConstraints())
+        }, 100) // 100ms delay
+    }
+
+    private fun addLocalStreamToPeerConnection() {
+        try {
+            Log.d("WebRTC", "=== ADDING TRACKS TO GENERATE ICE CANDIDATES ===")
+            
+            // Add audio track
+            val audioConstraints = MediaConstraints()
+            val audioSource = peerConnectionFactory.createAudioSource(audioConstraints)
+            val audioTrack = peerConnectionFactory.createAudioTrack("audioTrack", audioSource)
+            peerConnection?.addTrack(audioTrack, listOf("localStream"))
+            Log.d("WebRTC", "✅ Audio track added")
+            
+            // Add video track if available
+            localVideoTrack?.let { videoTrack ->
+                peerConnection?.addTrack(videoTrack, listOf("localStream"))
+                Log.d("WebRTC", "✅ Video track added")
+            } ?: Log.w("WebRTC", "⚠️ Video track not available")
+            
+        } catch (e: Exception) {
+            Log.e("WebRTC", "❌ Error adding tracks: ${e.message}")
+            e.printStackTrace()
+        }
     }
 
     private fun endCall() {

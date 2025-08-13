@@ -1,5 +1,5 @@
 const WebSocket = require("ws");
-const server = new WebSocket.Server({ port: 3000 });
+const server = new WebSocket.Server({ port: 3001 });
 
 let clients = {};
 
@@ -19,7 +19,7 @@ server.on("connection", (ws) => {
 
                 case "offer":
                     if (clients[data.target]) {
-                        console.log(`Sending offer from ${data.userId} to ${data.target}`);
+                        console.log(`Sending offer from ${data.initiatorId || data.userId} to ${data.target}`);
                         clients[data.target].send(JSON.stringify(data));
                     } else {
                         console.log(`Target ${data.target} not found.`);
@@ -28,7 +28,7 @@ server.on("connection", (ws) => {
 
                 case "answer":
                     if (clients[data.target]) {
-                        console.log(`Sending answer from ${data.userId} to ${data.target}`);
+                        console.log(`Sending answer from ${data.initiatorId || data.userId || 'unknown'} to ${data.target}`);
                         clients[data.target].send(JSON.stringify(data));
                     } else {
                         console.log(`Target ${data.target} not found.`);
@@ -37,7 +37,7 @@ server.on("connection", (ws) => {
 
                 case "candidate":
                     if (clients[data.target]) {
-                        console.log(`Relaying ICE candidate from ${data.userId} to ${data.target}`);
+                        console.log(`Relaying ICE candidate from ${data.userId || 'unknown'} to ${data.target}`);
                         clients[data.target].send(JSON.stringify(data));
                     } else {
                         console.log(`Target ${data.target} not found.`);
@@ -69,4 +69,4 @@ server.on("connection", (ws) => {
     });
 });
 
-console.log("WebRTC Signaling Server running on ws://localhost:3000");
+console.log("WebRTC Signaling Server running on ws://localhost:3001");
