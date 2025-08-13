@@ -56,7 +56,8 @@ class HomeActivity : AppCompatActivity() {
         bottomNavigation.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.menu_chat -> Toast.makeText(this, "Already in Chat", Toast.LENGTH_SHORT).show()
-//                R.id.menu_video -> startActivity(Intent(this, VideoCallActivity::class.java))
+                R.id.menu_contacts -> startActivity(Intent(this, ContactListActivity::class.java))
+                R.id.menu_video -> startActivity(Intent(this, VideoCallActivity::class.java))
 //                R.id.menu_notifications -> startActivity(Intent(this, NotificationActivity::class.java))
             }
             true
