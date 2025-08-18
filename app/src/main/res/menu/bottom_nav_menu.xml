@@ -2,14 +2,9 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
-        android:id="@+id/menu_chat"
-        android:icon="@android:drawable/ic_menu_send"
-        android:title="Chat" />
-
-    <item
-        android:id="@+id/menu_video"
-        android:icon="@android:drawable/ic_menu_camera"
-        android:title="Video Call" />
+        android:id="@+id/menu_home"
+        android:icon="@android:drawable/ic_menu_compass"
+        android:title="Home" />
 
     <item
         android:id="@+id/menu_contacts"
@@ -17,8 +12,8 @@
         android:title="Contacts" />
 
     <item
-        android:id="@+id/menu_notifications"
-        android:icon="@android:drawable/ic_menu_info_details"
-        android:title="Notifications" />
+        android:id="@+id/menu_profile"
+        android:icon="@android:drawable/ic_menu_preferences"
+        android:title="Profile" />
 
 </menu>

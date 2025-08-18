@@ -197,7 +197,7 @@ class VideoCallActivity : AppCompatActivity() {
 
     private fun connectToSignalingServer() {
         val request = Request.Builder()
-            .url("https://quick-planes-wave.loca.lt")  // Replace with actual WebSocket URL
+            .url("https://legal-baths-refuse.loca.lt")  // Replace with actual WebSocket URL
             .build()
 
         val client = OkHttpClient.Builder()

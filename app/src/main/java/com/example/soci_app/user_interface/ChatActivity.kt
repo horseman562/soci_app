@@ -28,6 +28,7 @@ class ChatActivity : AppCompatActivity() {
     private lateinit var messageInput: EditText
     private lateinit var sendButton: ImageButton
     private lateinit var videoCallButton: ImageButton
+    private lateinit var backButton: ImageButton
 
     private var chatId: Int = 0
     private var userId: Int = 3 // Replace with actual user ID dynamically
@@ -54,6 +55,7 @@ class ChatActivity : AppCompatActivity() {
         messageInput = findViewById(R.id.messageInput)
         sendButton = findViewById(R.id.sendButton)
         videoCallButton = findViewById(R.id.videoCallButton)
+        backButton = findViewById(R.id.backButton)
 
         // Set up RecyclerView
         messageAdapter = MessageAdapter(messages, currentUserId)
@@ -78,11 +80,16 @@ class ChatActivity : AppCompatActivity() {
             intent.putExtra("receiver_id", receiverId) // Pass receiver ID
             startActivity(intent)
         }
+
+        // back button
+        backButton.setOnClickListener {
+            finish()
+        }
     }
 
     private fun connectWebSocket() {
         val request = Request.Builder()
-            .url("https://evil-snails-draw.loca.lt/${currentUserId}")
+            .url("https://busy-masks-begin.loca.lt/${currentUserId}")
             .build()
 
         val client = OkHttpClient.Builder()

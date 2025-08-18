@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    alias(libs.plugins.jetbrains.kotlin.compose)
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -39,9 +41,6 @@ android {
     buildFeatures {
         compose = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
-    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -73,4 +72,13 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.google.android.material:material:1.9.0")
+    
+    // Firebase BoM
+    implementation(platform("com.google.firebase:firebase-bom:34.1.0"))
+    
+    // Firebase Analytics
+    implementation("com.google.firebase:firebase-analytics")
+    
+    // Firebase Cloud Messaging
+    implementation("com.google.firebase:firebase-messaging")
 }

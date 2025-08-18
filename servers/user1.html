@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>WebRTC Video Call</title>
+</head>
+<body>
+    <h2>WebRTC Video Call</h2>
+    <video id="localVideo" autoplay playsinline></video>
+    <video id="remoteVideo" autoplay playsinline></video>
+    <button id="startCall">Start Call</button>
+
+    <script>
+        const socket = new WebSocket("ws://localhost:3000");
+        const peer = new RTCPeerConnection({
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        });
+        let localStream;
+
+        // Get Camera & Mic
+        async function startMedia() {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            document.getElementById("localVideo").srcObject = localStream;
+            localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+        }
+
+        // Handle Remote Stream
+        peer.ontrack = (event) => {
+            document.getElementById("remoteVideo").srcObject = event.streams[0];
+        };
+
+        // ICE Candidate Exchange
+        peer.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.send(JSON.stringify({ type: "candidate", candidate: event.candidate }));
+            }
+        };
+
+        // Handle WebSocket Messages
+        socket.onmessage = async (message) => {
+            let data = JSON.parse(message.data);
+
+            if (data.type === "offer") {
+                await peer.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                const answer = await peer.createAnswer();
+                await peer.setLocalDescription(answer);
+                socket.send(JSON.stringify({ type: "answer", sdp: answer }));
+            } else if (data.type === "answer") {
+                await peer.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            } else if (data.type === "candidate") {
+                await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+        };
+
+        // Start Call
+        document.getElementById("startCall").addEventListener("click", async () => {
+            await startMedia();
+            const offer = await peer.createOffer();
+            await peer.setLocalDescription(offer);
+            socket.send(JSON.stringify({ type: "offer", sdp: offer }));
+        });
+    </script>
+</body>
+</html>

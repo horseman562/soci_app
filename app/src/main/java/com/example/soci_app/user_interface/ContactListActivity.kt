@@ -16,11 +16,13 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.soci_app.R
 import com.example.soci_app.adapter.ContactAdapter
 import com.example.soci_app.model.Contact
+import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class ContactListActivity : AppCompatActivity() {
 
     private lateinit var contactRecyclerView: RecyclerView
     private lateinit var contactAdapter: ContactAdapter
+    private lateinit var bottomNavigation: BottomNavigationView
     private val contacts = mutableListOf<Contact>()
     private val REQUEST_READ_CONTACTS = 1
 
@@ -29,6 +31,7 @@ class ContactListActivity : AppCompatActivity() {
         setContentView(R.layout.activity_contact_list)
 
         contactRecyclerView = findViewById(R.id.contactRecyclerView)
+        bottomNavigation = findViewById(R.id.bottomNavigation)
         
         contactRecyclerView.layoutManager = LinearLayoutManager(this)
         
@@ -40,6 +43,26 @@ class ContactListActivity : AppCompatActivity() {
             startActivity(intent)
         }
         contactRecyclerView.adapter = contactAdapter
+
+        // Set current tab as selected
+        bottomNavigation.selectedItemId = R.id.menu_contacts
+
+        // Handle Bottom Navigation Clicks
+        bottomNavigation.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.menu_home -> {
+                    startActivity(Intent(this, HomeActivity::class.java))
+                    finish()
+                }
+                R.id.menu_contacts -> {
+                    // Already in contacts, do nothing
+                }
+                R.id.menu_profile -> {
+                    Toast.makeText(this, "Profile coming soon", Toast.LENGTH_SHORT).show()
+                }
+            }
+            true
+        }
         
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) 

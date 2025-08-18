@@ -6,12 +6,14 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Button
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.soci_app.R
 import com.example.soci_app.api.RetrofitClient
 import com.example.soci_app.model.LoginRequest
 import com.example.soci_app.model.LoginResponse
+import com.google.firebase.messaging.FirebaseMessaging
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -35,6 +37,7 @@ class LoginActivity : AppCompatActivity() {
         val emailField = findViewById<EditText>(R.id.email)
         val passwordField = findViewById<EditText>(R.id.password)
         val loginButton = findViewById<Button>(R.id.loginButton)
+        val registerLink = findViewById<TextView>(R.id.registerLink)
 
         loginButton.setOnClickListener {
             val email = emailField.text.toString()
@@ -46,6 +49,13 @@ class LoginActivity : AppCompatActivity() {
                 Toast.makeText(this, "Please enter email & password", Toast.LENGTH_SHORT).show()
             }
         }
+
+        registerLink.setOnClickListener {
+            startActivity(Intent(this, RegisterActivity::class.java))
+        }
+
+        // Get FCM Token for testing
+        getFCMToken()
     }
 
     private fun loginUser(email: String, password: String) {
@@ -78,6 +88,22 @@ class LoginActivity : AppCompatActivity() {
                 Toast.makeText(this@LoginActivity, "Error: ${t.message}", Toast.LENGTH_SHORT).show()
             }
         })
+    }
+
+    private fun getFCMToken() {
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w("FCM", "Fetching FCM registration token failed", task.exception)
+                return@addOnCompleteListener
+            }
+
+            // Get new FCM registration token
+            val token = task.result
+            Log.d("FCM", "FCM Registration token: $token")
+            Toast.makeText(this, "FCM Token logged - check logcat", Toast.LENGTH_LONG).show()
+
+            // TODO: Send token to your server to store in database
+        }
     }
 
 }

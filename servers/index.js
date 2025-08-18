@@ -1,6 +1,8 @@
 const axios = require('axios');
 const uWS = require('uWebSockets.js');
-const port = 7121;
+const admin = require('firebase-admin');
+const fs = require('fs');
+const port = 3002;
 const users = {};
 const mysql = require('mysql2');
 
@@ -10,6 +12,33 @@ const db = mysql.createPool({
     password: '',         // Same as DB_PASSWORD (empty)
     database: 'mk'        // Same as DB_DATABASE
 }).promise();
+
+// Initialize Firebase Admin SDK
+const serviceAccount = require('./qiu-app-f1e40-firebase-adminsdk-fbsvc-437a2686f5.json');
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+// Function to send FCM notification
+async function sendNotification(fcmToken, title, body, data = {}) {
+  try {
+    const message = {
+      notification: {
+        title: title,
+        body: body
+      },
+      data: data,
+      token: fcmToken
+    };
+
+    const response = await admin.messaging().send(message);
+    console.log('Successfully sent FCM message:', response);
+    return response;
+  } catch (error) {
+    console.error('Error sending FCM message:', error);
+    throw error;
+  }
+}
 
 
 const app = uWS./*SSL*/App({
@@ -70,7 +99,7 @@ const app = uWS./*SSL*/App({
 
       // Fetch chat details
       const chatDetailResponse = await axios.get(
-        `https://a261a19ea36e.ngrok-free.app/api/chat-detail?chat_id=${data.chat_id}&sender_id=${data.sender_id}`,
+        `https://2d5f98860316.ngrok-free.app/api/chat-detail?chat_id=${data.chat_id}&sender_id=${data.sender_id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -110,7 +139,7 @@ const app = uWS./*SSL*/App({
             try { 
               // Fetch user details
               const userResponse = await axios.get(
-                `https://a261a19ea36e.ngrok-free.app/api/check-user?user_id=${receiver_id}`,
+                `https://2d5f98860316.ngrok-free.app/api/check-user?user_id=${receiver_id}`,
                 {
                   headers: {
                     Authorization: `Bearer ${token}`
@@ -131,6 +160,29 @@ const app = uWS./*SSL*/App({
                       );
                   
                       console.log('Message saved to MySQL:', rows.insertId);
+
+                      // Send FCM notification to offline user
+                      try {
+                        // Get user's FCM token from database (you'll need to store this)
+                        const [userTokenRows] = await db.execute(
+                          `SELECT fcm_token FROM users WHERE id = ?`,
+                          [receiver_id]
+                        );
+                        
+                        if (userTokenRows.length > 0 && userTokenRows[0].fcm_token) {
+                          await sendNotification(
+                            userTokenRows[0].fcm_token,
+                            'New Message',
+                            data.message,
+                            {
+                              chat_id: data.chat_id.toString(),
+                              sender_id: data.sender_id.toString()
+                            }
+                          );
+                        }
+                      } catch (fcmError) {
+                        console.error('FCM notification error:', fcmError);
+                      }
                     } catch (error) {
                         console.error('Database error:', error);
                     }
@@ -161,6 +213,67 @@ const app = uWS./*SSL*/App({
   },
   close: (ws, code, message) => {
     console.log('WebSocket closed');
+  }
+}).options('/test-notification', (res, req) => {
+  // Handle CORS preflight requests
+  res.writeHeader('Access-Control-Allow-Origin', '*')
+     .writeHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+     .writeHeader('Access-Control-Allow-Headers', 'Content-Type')
+     .writeStatus('200 OK')
+     .end();
+}).post('/test-notification', (res, req) => {
+  // Add CORS headers
+  res.writeHeader('Access-Control-Allow-Origin', '*')
+     .writeHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+     .writeHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Test endpoint for sending Firebase notifications
+  let buffer = Buffer.alloc(0);
+  
+  res.onAborted(() => {
+    console.log('Request aborted');
+  });
+  
+  res.onData((chunk, isLast) => {
+    buffer = Buffer.concat([buffer, Buffer.from(chunk)]);
+    
+    if (isLast) {
+      try {
+        const data = JSON.parse(buffer.toString());
+        const { fcmToken, title, body } = data;
+        
+        if (!fcmToken || !title || !body) {
+          res.writeStatus('400 Bad Request').end('Missing required fields: fcmToken, title, body');
+          return;
+        }
+        
+        sendNotification(fcmToken, title, body)
+          .then(() => {
+            res.writeStatus('200 OK').end('Notification sent successfully');
+          })
+          .catch((error) => {
+            res.writeStatus('500 Internal Server Error').end('Failed to send notification: ' + error.message);
+          });
+          
+      } catch (error) {
+        res.writeStatus('400 Bad Request').end('Invalid JSON');
+      }
+    }
+  });
+}).get('/firebase-test', (res, req) => {
+  // Serve the test HTML page
+  res.writeHeader('Content-Type', 'text/html')
+     .writeHeader('Access-Control-Allow-Origin', '*');
+  
+  res.onAborted(() => {
+    console.log('GET request aborted');
+  });
+  
+  try {
+    const html = fs.readFileSync('./firebase-test.html', 'utf8');
+    res.end(html);
+  } catch (error) {
+    res.writeStatus('500 Internal Server Error').end('Error loading test page');
   }
 }).any('/*', (res, req) => {
   res.end('Nothing to see here!');

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebRTC ICE Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+        .log { background: #f0f0f0; padding: 10px; height: 400px; overflow-y: auto; border: 1px solid #ccc; }
+        .step { margin: 10px 0; padding: 10px; border-left: 4px solid #007cba; background: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WebRTC ICE Candidate Test</h1>
+        
+        <div class="step">
+            <h3>Step 1: Create Peer Connections</h3>
+            <button onclick="createPeerConnections()">Create Peer Connections</button>
+        </div>
+
+        <div class="step">
+            <h3>Step 2: Add Audio Tracks</h3>
+            <button onclick="addAudioTracks()">Add Audio Tracks</button>
+        </div>
+
+        <div class="step">
+            <h3>Step 3: Create Offer</h3>
+            <button onclick="createOffer()">Create Offer</button>
+        </div>
+
+        <div class="step">
+            <h3>Step 4: Set Remote & Create Answer</h3>
+            <button onclick="handleOffer()">Handle Offer & Create Answer</button>
+        </div>
+
+        <div class="step">
+            <h3>Step 5: Complete Connection</h3>
+            <button onclick="completeConnection()">Set Remote Answer</button>
+        </div>
+
+        <h3>Logs:</h3>
+        <div id="log" class="log"></div>
+        
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <script>
+        let pc1, pc2; // Two peer connections to simulate caller and receiver
+        let offer, answer;
+        
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function createPeerConnections() {
+            log("=== STEP 1: Creating Peer Connections ===");
+            
+            const iceServers = [
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun.cloudflare.com:3478' }
+            ];
+
+            pc1 = new RTCPeerConnection({ iceServers });
+            pc2 = new RTCPeerConnection({ iceServers });
+
+            // ICE candidate handling for PC1 (Caller)
+            pc1.onicecandidate = (event) => {
+                if (event.candidate) {
+                    log(`🔥 PC1 ICE Candidate: ${event.candidate.candidate}`);
+                    // In real app, send this to remote peer via signaling server
+                    pc2.addIceCandidate(event.candidate);
+                } else {
+                    log("PC1: ICE gathering complete");
+                }
+            };
+
+            // ICE candidate handling for PC2 (Receiver)  
+            pc2.onicecandidate = (event) => {
+                if (event.candidate) {
+                    log(`🔥 PC2 ICE Candidate: ${event.candidate.candidate}`);
+                    // In real app, send this to remote peer via signaling server
+                    pc1.addIceCandidate(event.candidate);
+                } else {
+                    log("PC2: ICE gathering complete");
+                }
+            };
+
+            // ICE gathering state changes
+            pc1.onicegatheringstatechange = () => {
+                log(`PC1 ICE Gathering: ${pc1.iceGatheringState}`);
+            };
+
+            pc2.onicegatheringstatechange = () => {
+                log(`PC2 ICE Gathering: ${pc2.iceGatheringState}`);
+            };
+
+            // Connection state changes
+            pc1.oniceconnectionstatechange = () => {
+                log(`PC1 ICE Connection: ${pc1.iceConnectionState}`);
+            };
+
+            pc2.oniceconnectionstatechange = () => {
+                log(`PC2 ICE Connection: ${pc2.iceConnectionState}`);
+            };
+
+            log("✅ Peer connections created with ICE servers");
+        }
+
+        async function addAudioTracks() {
+            log("=== STEP 2: Adding Audio Tracks ===");
+            
+            try {
+                // Get user media (audio only)
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                log("✅ Got user media stream");
+
+                // Add tracks to both peer connections
+                stream.getTracks().forEach(track => {
+                    pc1.addTrack(track, stream);
+                    pc2.addTrack(track, stream);
+                });
+
+                log("✅ Audio tracks added to both peer connections");
+                log("⏳ ICE candidates should start generating after creating offer...");
+                
+            } catch (error) {
+                log(`❌ Error getting user media: ${error.message}`);
+            }
+        }
+
+        async function createOffer() {
+            log("=== STEP 3: Creating Offer ===");
+            
+            try {
+                offer = await pc1.createOffer();
+                log("✅ Offer created");
+                
+                await pc1.setLocalDescription(offer);
+                log("✅ PC1 setLocalDescription(offer) - ICE gathering should start now!");
+                
+            } catch (error) {
+                log(`❌ Error creating offer: ${error.message}`);
+            }
+        }
+
+        async function handleOffer() {
+            log("=== STEP 4: Handling Offer & Creating Answer ===");
+            
+            try {
+                await pc2.setRemoteDescription(offer);
+                log("✅ PC2 setRemoteDescription(offer)");
+                
+                answer = await pc2.createAnswer();
+                log("✅ Answer created");
+                
+                await pc2.setLocalDescription(answer);
+                log("✅ PC2 setLocalDescription(answer) - ICE gathering should start now!");
+                
+            } catch (error) {
+                log(`❌ Error handling offer: ${error.message}`);
+            }
+        }
+
+        async function completeConnection() {
+            log("=== STEP 5: Completing Connection ===");
+            
+            try {
+                await pc1.setRemoteDescription(answer);
+                log("✅ PC1 setRemoteDescription(answer)");
+                log("🎉 WebRTC connection setup complete!");
+                log("⏳ Waiting for ICE connection to establish...");
+                
+            } catch (error) {
+                log(`❌ Error completing connection: ${error.message}`);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -2,6 +2,7 @@ package com.example.soci_app.api
 
 import com.example.soci_app.model.LoginRequest
 import com.example.soci_app.model.LoginResponse
+import com.example.soci_app.model.RegisterRequest
 import com.example.soci_app.model.User
 import com.example.soci_app.model.Chat
 import com.example.soci_app.model.Message
@@ -15,6 +16,9 @@ import retrofit2.http.Path
 interface ApiService {
     @POST("login")
     fun login(@Body request: LoginRequest): Call<LoginResponse>
+
+    @POST("register")
+    fun register(@Body request: RegisterRequest): Call<LoginResponse>
 
     @GET("user")
     fun getUser(@Header("Authorization") token: String): Call<User>

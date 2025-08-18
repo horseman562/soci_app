@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -23,6 +24,7 @@ import retrofit2.Response
 class HomeActivity : AppCompatActivity() {
 
     private lateinit var welcomeText: TextView
+    private lateinit var logoutButton: Button
     private lateinit var chatRecyclerView: RecyclerView
     private lateinit var bottomNavigation: BottomNavigationView
 
@@ -32,11 +34,17 @@ class HomeActivity : AppCompatActivity() {
 
         // UI Elements
         welcomeText = findViewById(R.id.welcomeText)
+        logoutButton = findViewById(R.id.logoutButton)
         chatRecyclerView = findViewById(R.id.chatRecyclerView)
         bottomNavigation = findViewById(R.id.bottomNavigation)
 
         // Setup RecyclerView
         chatRecyclerView.layoutManager = LinearLayoutManager(this)
+
+        // Setup Logout Button
+        logoutButton.setOnClickListener {
+            logout()
+        }
 
         // Get Auth Token
         val sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
@@ -52,13 +60,22 @@ class HomeActivity : AppCompatActivity() {
             finish()
         }
 
+        // Set current tab as selected
+        bottomNavigation.selectedItemId = R.id.menu_home
+
         // Handle Bottom Navigation Clicks
         bottomNavigation.setOnItemSelectedListener { item ->
             when (item.itemId) {
-                R.id.menu_chat -> Toast.makeText(this, "Already in Chat", Toast.LENGTH_SHORT).show()
-                R.id.menu_contacts -> startActivity(Intent(this, ContactListActivity::class.java))
-                R.id.menu_video -> startActivity(Intent(this, VideoCallActivity::class.java))
-//                R.id.menu_notifications -> startActivity(Intent(this, NotificationActivity::class.java))
+                R.id.menu_home -> {
+                    // Already in home, do nothing
+                }
+                R.id.menu_contacts -> {
+                    startActivity(Intent(this, ContactListActivity::class.java))
+                    finish()
+                }
+                R.id.menu_profile -> {
+                    Toast.makeText(this, "Profile coming soon", Toast.LENGTH_SHORT).show()
+                }
             }
             true
         }
@@ -116,5 +133,18 @@ class HomeActivity : AppCompatActivity() {
         })
     }
 
+    private fun logout() {
+        // Clear stored authentication data
+        val sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
+        sharedPreferences.edit().clear().apply()
+
+        Toast.makeText(this, "Logged out successfully", Toast.LENGTH_SHORT).show()
+
+        // Navigate back to login screen
+        val intent = Intent(this, LoginActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(intent)
+        finish()
+    }
 
 }
