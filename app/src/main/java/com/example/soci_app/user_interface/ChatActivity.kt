@@ -47,6 +47,9 @@ class ChatActivity : AppCompatActivity() {
     private var incomingCallDialog: AlertDialog? = null
     private var callTimeoutHandler: Handler? = null
     private var callTimeoutRunnable: Runnable? = null
+    private var isSignalingConnected = false
+    private var lastCallEndTime = 0L
+    private val CALL_COOLDOWN_MS = 3000L // 3 second cooldown between calls
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -152,7 +155,14 @@ class ChatActivity : AppCompatActivity() {
         android.os.Handler(mainLooper).postDelayed({ connectWebSocket() }, 3000)
     }
 
+    private fun reconnectSignalingServer() {
+        Log.d("SignalingWS", "Reconnecting to signaling server in 3 seconds...")
+        android.os.Handler(mainLooper).postDelayed({ connectSignalingServer() }, 3000)
+    }
+
     private fun connectSignalingServer() {
+        Log.d("SignalingWS", "Attempting to connect to signaling server...")
+        
         val request = Request.Builder()
             .url("ws://192.168.0.5:3001")
             .build()
@@ -164,6 +174,7 @@ class ChatActivity : AppCompatActivity() {
         signalingWebSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
                 Log.d("SignalingWS", "Connected to Signaling Server")
+                isSignalingConnected = true
                 
                 // Register user
                 val registerMessage = JSONObject().apply {
@@ -200,6 +211,7 @@ class ChatActivity : AppCompatActivity() {
                             // Reset any call-related UI state if needed
                             cancelCallTimeout()
                             incomingCallDialog?.dismiss()
+                            lastCallEndTime = System.currentTimeMillis()
                             Log.d("SignalingWS", "Call ended notification received from user ${json.optInt("userId", -1)}")
                         }
                     }
@@ -208,10 +220,18 @@ class ChatActivity : AppCompatActivity() {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
                 Log.e("SignalingWS", "Connection Error: ${t.message}")
+                isSignalingConnected = false
+                // Reconnect signaling server after failure
+                reconnectSignalingServer()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d("SignalingWS", "Signaling WebSocket closed: $reason")
+                isSignalingConnected = false
+                // Only reconnect if it wasn't a normal closure
+                if (code != 1000) {
+                    reconnectSignalingServer()
+                }
             }
         })
     }
@@ -273,17 +293,39 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun initiateVideoCall() {
+        Log.d("SignalingWS", "Attempting to initiate video call. Connection status: $isSignalingConnected")
+        
+        // Check cooldown period
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastCallEndTime < CALL_COOLDOWN_MS) {
+            val remaining = (CALL_COOLDOWN_MS - (currentTime - lastCallEndTime)) / 1000
+            Toast.makeText(this, "Please wait ${remaining}s before calling again", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        if (!isSignalingConnected || signalingWebSocket == null) {
+            Log.e("SignalingWS", "Cannot initiate call - signaling not connected!")
+            Toast.makeText(this, "Connection not ready, please try again", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
         val callRequestMessage = JSONObject().apply {
             put("type", "call_request")
             put("caller_id", currentUserId)
             put("receiver_id", receiverId)
         }
         
-        signalingWebSocket?.send(callRequestMessage.toString())
-        Toast.makeText(this, "Calling...", Toast.LENGTH_SHORT).show()
-        
-        // Set call timeout (30 seconds)
-        startCallTimeout()
+        Log.d("SignalingWS", "Sending call request: $callRequestMessage")
+        try {
+            signalingWebSocket?.send(callRequestMessage.toString())
+            Toast.makeText(this, "Calling...", Toast.LENGTH_SHORT).show()
+            
+            // Set call timeout (30 seconds)
+            startCallTimeout()
+        } catch (e: Exception) {
+            Log.e("SignalingWS", "Error sending call request: ${e.message}")
+            Toast.makeText(this, "Failed to initiate call", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun startCallTimeout() {
@@ -359,9 +401,24 @@ class ChatActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Always reconnect signaling server when resuming to ensure fresh connection
+        Log.d("SignalingWS", "Forcing fresh signaling connection on resume")
+        isSignalingConnected = false
+        lastCallEndTime = System.currentTimeMillis() // Set cooldown when returning from video call
+        signalingWebSocket?.close(1000, "Forcing fresh connection")
+        connectSignalingServer()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         incomingCallDialog?.dismiss()
         cancelCallTimeout()
+        
+        // Clean up WebSocket connections
+        isSignalingConnected = false
+        webSocket?.close(1000, "Activity destroyed")
+        signalingWebSocket?.close(1000, "Activity destroyed")
     }
 }

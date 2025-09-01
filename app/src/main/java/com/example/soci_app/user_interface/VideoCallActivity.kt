@@ -228,6 +228,7 @@ class VideoCallActivity : AppCompatActivity() {
             .readTimeout(0, TimeUnit.MILLISECONDS) // WebSockets require infinite read timeout
             .build()
 
+        Log.d("WebRTC", "Creating NEW signaling connection for VideoCall")
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d("WebRTC", "Connected to WebSocket Signaling Server")
@@ -613,7 +614,7 @@ class VideoCallActivity : AppCompatActivity() {
             peerConnection?.close()
             peerConnection = null
             
-            // Close WebSocket connection
+            // Close VideoCall's signaling WebSocket properly
             webSocket?.close(1000, "Call ended")
             webSocket = null
             
