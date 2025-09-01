@@ -4,10 +4,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.LayoutInflater
+import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -35,8 +41,12 @@ class ChatActivity : AppCompatActivity() {
     private var receiverId: Int = 0
     private val messages = mutableListOf<Message>()
     private var webSocket: WebSocket? = null
+    private var signalingWebSocket: WebSocket? = null
     private lateinit var sharedPreferences: SharedPreferences
     private var currentUserId: Int = 0
+    private var incomingCallDialog: AlertDialog? = null
+    private var callTimeoutHandler: Handler? = null
+    private var callTimeoutRunnable: Runnable? = null
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,6 +77,9 @@ class ChatActivity : AppCompatActivity() {
 
         // Connect WebSocket
         connectWebSocket()
+        
+        // Connect to Signaling Server for video calls
+        connectSignalingServer()
 
         // Send new message
         sendButton.setOnClickListener {
@@ -75,10 +88,7 @@ class ChatActivity : AppCompatActivity() {
 
         // video call
         videoCallButton.setOnClickListener {
-            val intent = Intent(this, VideoCallActivity::class.java)
-            intent.putExtra("chat_id", chatId) // Pass chat ID
-            intent.putExtra("receiver_id", receiverId) // Pass receiver ID
-            startActivity(intent)
+            initiateVideoCall()
         }
 
         // back button
@@ -107,6 +117,7 @@ class ChatActivity : AppCompatActivity() {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val json = JSONObject(text)
                 Log.d("WebSocket Message", "Connected to WebSocket message ${json}")
+                
                 if (json.getString("type") == "message") {
                     val message = Message(
                         id = 0,
@@ -139,6 +150,70 @@ class ChatActivity : AppCompatActivity() {
     private fun reconnectWebSocket() {
         Log.d("WebSocket", "Reconnecting in 3 seconds...")
         android.os.Handler(mainLooper).postDelayed({ connectWebSocket() }, 3000)
+    }
+
+    private fun connectSignalingServer() {
+        val request = Request.Builder()
+            .url("ws://192.168.0.5:3001")
+            .build()
+
+        val client = OkHttpClient.Builder()
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .build()
+
+        signalingWebSocket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                Log.d("SignalingWS", "Connected to Signaling Server")
+                
+                // Register user
+                val registerMessage = JSONObject().apply {
+                    put("type", "register")
+                    put("userId", currentUserId.toString())
+                }
+                webSocket.send(registerMessage.toString())
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val json = JSONObject(text)
+                Log.d("SignalingWS", "Received: $json")
+                
+                when (json.getString("type")) {
+                    "call_request" -> {
+                        runOnUiThread {
+                            showIncomingCallDialog(json.getInt("caller_id"))
+                        }
+                    }
+                    "call_accepted" -> {
+                        runOnUiThread {
+                            cancelCallTimeout()
+                            startVideoCall(true) // Caller
+                        }
+                    }
+                    "call_declined" -> {
+                        runOnUiThread {
+                            cancelCallTimeout()
+                            Toast.makeText(this@ChatActivity, "Call was declined", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    "call_ended" -> {
+                        runOnUiThread {
+                            // Reset any call-related UI state if needed
+                            cancelCallTimeout()
+                            incomingCallDialog?.dismiss()
+                            Log.d("SignalingWS", "Call ended notification received from user ${json.optInt("userId", -1)}")
+                        }
+                    }
+                }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
+                Log.e("SignalingWS", "Connection Error: ${t.message}")
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.d("SignalingWS", "Signaling WebSocket closed: $reason")
+            }
+        })
     }
 
     private fun loadMessages() {
@@ -195,5 +270,98 @@ class ChatActivity : AppCompatActivity() {
         webSocket?.send(jsonMessage.toString())
 
 
+    }
+
+    private fun initiateVideoCall() {
+        val callRequestMessage = JSONObject().apply {
+            put("type", "call_request")
+            put("caller_id", currentUserId)
+            put("receiver_id", receiverId)
+        }
+        
+        signalingWebSocket?.send(callRequestMessage.toString())
+        Toast.makeText(this, "Calling...", Toast.LENGTH_SHORT).show()
+        
+        // Set call timeout (30 seconds)
+        startCallTimeout()
+    }
+
+    private fun startCallTimeout() {
+        callTimeoutHandler = Handler(mainLooper)
+        callTimeoutRunnable = Runnable {
+            Toast.makeText(this, "Call timed out - no response", Toast.LENGTH_LONG).show()
+        }
+        callTimeoutHandler?.postDelayed(callTimeoutRunnable!!, 30000) // 30 seconds
+    }
+
+    private fun cancelCallTimeout() {
+        callTimeoutRunnable?.let { runnable ->
+            callTimeoutHandler?.removeCallbacks(runnable)
+        }
+        callTimeoutHandler = null
+        callTimeoutRunnable = null
+    }
+
+    private fun showIncomingCallDialog(callerId: Int) {
+        if (incomingCallDialog?.isShowing == true) return // Prevent multiple dialogs
+        
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_incoming_call, null)
+        val callerNameText = dialogView.findViewById<TextView>(R.id.callerNameText)
+        val acceptButton = dialogView.findViewById<Button>(R.id.acceptCallButton)
+        val declineButton = dialogView.findViewById<Button>(R.id.declineCallButton)
+        
+        callerNameText.text = "User $callerId" // You can replace this with actual name lookup
+        
+        incomingCallDialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setCancelable(false)
+            .create()
+        
+        acceptButton.setOnClickListener {
+            acceptCall(callerId)
+            incomingCallDialog?.dismiss()
+        }
+        
+        declineButton.setOnClickListener {
+            declineCall(callerId)
+            incomingCallDialog?.dismiss()
+        }
+        
+        incomingCallDialog?.show()
+    }
+
+    private fun acceptCall(callerId: Int) {
+        val acceptMessage = JSONObject().apply {
+            put("type", "call_accepted")
+            put("caller_id", callerId)
+            put("receiver_id", currentUserId)
+        }
+        
+        signalingWebSocket?.send(acceptMessage.toString())
+        startVideoCall(false) // Receiver
+    }
+
+    private fun declineCall(callerId: Int) {
+        val declineMessage = JSONObject().apply {
+            put("type", "call_declined")
+            put("caller_id", callerId)
+            put("receiver_id", currentUserId)
+        }
+        
+        signalingWebSocket?.send(declineMessage.toString())
+    }
+
+    private fun startVideoCall(isCaller: Boolean) {
+        val intent = Intent(this, VideoCallActivity::class.java)
+        intent.putExtra("chat_id", chatId)
+        intent.putExtra("receiver_id", receiverId)
+        intent.putExtra("is_caller", isCaller)
+        startActivity(intent)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        incomingCallDialog?.dismiss()
+        cancelCallTimeout()
     }
 }

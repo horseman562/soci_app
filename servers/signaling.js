@@ -62,6 +62,74 @@ server.on("connection", (ws) => {
                     }
                     break;
 
+                case "call_request":
+                    const receiverId = data.receiver_id;
+                    if (clients[receiverId] && clients[receiverId].readyState === WebSocket.OPEN) {
+                        console.log(`Relaying call request from ${data.caller_id} to ${receiverId}`);
+                        try {
+                            clients[receiverId].send(JSON.stringify(data));
+                        } catch (error) {
+                            console.error(`Error sending call request to ${receiverId}:`, error.message);
+                            delete clients[receiverId];
+                        }
+                    } else {
+                        console.log(`Receiver ${receiverId} not found or connection closed.`);
+                        if (clients[receiverId]) delete clients[receiverId];
+                    }
+                    break;
+
+                case "call_accepted":
+                    const callerId = data.caller_id;
+                    if (clients[callerId] && clients[callerId].readyState === WebSocket.OPEN) {
+                        console.log(`Relaying call acceptance from ${data.receiver_id} to ${callerId}`);
+                        try {
+                            clients[callerId].send(JSON.stringify(data));
+                        } catch (error) {
+                            console.error(`Error sending call acceptance to ${callerId}:`, error.message);
+                            delete clients[callerId];
+                        }
+                    } else {
+                        console.log(`Caller ${callerId} not found or connection closed.`);
+                        if (clients[callerId]) delete clients[callerId];
+                    }
+                    break;
+
+                case "call_declined":
+                    const originalCaller = data.caller_id;
+                    if (clients[originalCaller] && clients[originalCaller].readyState === WebSocket.OPEN) {
+                        console.log(`Relaying call decline from ${data.receiver_id} to ${originalCaller}`);
+                        try {
+                            clients[originalCaller].send(JSON.stringify(data));
+                        } catch (error) {
+                            console.error(`Error sending call decline to ${originalCaller}:`, error.message);
+                            delete clients[originalCaller];
+                        }
+                    } else {
+                        console.log(`Caller ${originalCaller} not found or connection closed.`);
+                        if (clients[originalCaller]) delete clients[originalCaller];
+                    }
+                    break;
+
+                case "call_ended":
+                    const endTarget = data.target;
+                    if (clients[endTarget] && clients[endTarget].readyState === WebSocket.OPEN) {
+                        console.log(`Notifying ${endTarget} that call with ${data.userId} ended`);
+                        try {
+                            clients[endTarget].send(JSON.stringify({
+                                type: "call_ended",
+                                userId: data.userId
+                            }));
+                        } catch (error) {
+                            console.error(`Error notifying call end to ${endTarget}:`, error.message);
+                            delete clients[endTarget];
+                        }
+                    } else {
+                        console.log(`Target ${endTarget} not found or connection closed for call end notification.`);
+                        if (clients[endTarget]) delete clients[endTarget];
+                    }
+                    console.log(`Call ended between ${data.userId} and ${endTarget} - cleaning up any call state`);
+                    break;
+
                 default:
                     console.log("Unknown message type:", data.type);
             }

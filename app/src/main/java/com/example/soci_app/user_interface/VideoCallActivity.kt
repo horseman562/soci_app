@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Button
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.example.soci_app.R
 import okhttp3.*
@@ -22,8 +23,8 @@ class VideoCallActivity : AppCompatActivity() {
     private var peerConnection: PeerConnection? = null
     private lateinit var localVideoView: SurfaceViewRenderer
     private lateinit var remoteVideoView: SurfaceViewRenderer
-    private lateinit var startCallButton: Button
     private lateinit var endCallButton: Button
+    private lateinit var callStatusText: TextView
     private lateinit var eglBase: EglBase
     private var videoCapturer: CameraVideoCapturer? = null
     private var webSocket: WebSocket? = null
@@ -33,6 +34,16 @@ class VideoCallActivity : AppCompatActivity() {
     private var chatId: Int = 0
     private var receiverId: Int = 0
     private var userId: Int = 0//Replace with actual logged-in user ID
+    private var isCaller: Boolean = false
+
+    enum class CallState {
+        CONNECTING, CALLING, RINGING, CONNECTED, ENDED
+    }
+    private var callState: CallState = CallState.CONNECTING
+    private var isWebRTCInitialized = false
+    private var isSignalingConnected = false
+    private var shouldStartCallWhenReady = false
+    private var isEndingCall = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,13 +54,14 @@ class VideoCallActivity : AppCompatActivity() {
         chatId = intent.getIntExtra("chat_id", 0)
         receiverId = intent.getIntExtra("receiver_id", 0)
         userId = sharedPreferences.getInt("USER_ID", 0)
+        isCaller = intent.getBooleanExtra("is_caller", false)
         Log.e("WebRTC", "ULogged in " + userId)
         Log.e("WebRTC", "RLogged in " + receiverId)
         // Initialize UI Elements
         localVideoView = findViewById(R.id.localVideoView)
         remoteVideoView = findViewById(R.id.remoteVideoView)
-        startCallButton = findViewById(R.id.startCallButton)
         endCallButton = findViewById(R.id.endCallButton)
+        callStatusText = findViewById(R.id.callStatusText)
 
         checkPermissions()
         // Initialize EGL context for video rendering
@@ -67,7 +79,14 @@ class VideoCallActivity : AppCompatActivity() {
         // Connect to WebSocket Signaling Server
         connectToSignalingServer()
 
-        startCallButton.setOnClickListener { startCall() }
+        // Set initial call state and flags
+        if (isCaller) {
+            updateCallState(CallState.CALLING)
+            shouldStartCallWhenReady = true
+        } else {
+            updateCallState(CallState.RINGING)
+        }
+
         endCallButton.setOnClickListener { endCall() }
     }
 
@@ -154,6 +173,11 @@ class VideoCallActivity : AppCompatActivity() {
                 val audioSource = peerConnectionFactory.createAudioSource(audioConstraints)
                 localAudioTrack = peerConnectionFactory.createAudioTrack("audioTrack", audioSource)
 
+                // Mark WebRTC as initialized and try to start call if needed
+                isWebRTCInitialized = true
+                Log.d("WebRTC", "✅ WebRTC initialization complete")
+                tryStartCallIfReady()
+
             } catch (e: Exception) {
                 Log.e("WebRTC", "Error starting video capture: ${e.message}")
             }
@@ -211,6 +235,11 @@ class VideoCallActivity : AppCompatActivity() {
                 // Send registration message
                 val registerMessage = """{"type": "register", "userId": "$userId"}"""
                 webSocket.send(registerMessage)
+                
+                // Mark signaling as connected and try to start call if needed
+                isSignalingConnected = true
+                Log.d("WebRTC", "✅ Signaling connection established")
+                tryStartCallIfReady()
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -221,11 +250,23 @@ class VideoCallActivity : AppCompatActivity() {
                     "offer" -> handleOffer(message)
                     "answer" -> handleAnswer(message)
                     "candidate" -> handleCandidate(message)
+                    "call_ended" -> {
+                        Log.d("WebRTC", "Received call ended notification from remote peer")
+                        runOnUiThread {
+                            // The remote peer ended the call, clean up and exit
+                            endCall(fromRemote = true)
+                        }
+                    }
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e("WebRTC", "WebSocket connection error vide: ${t.message}")
+                runOnUiThread {
+                    updateCallState(CallState.ENDED)
+                    android.widget.Toast.makeText(this@VideoCallActivity, "Connection failed: ${t.message}", android.widget.Toast.LENGTH_LONG).show()
+                    Handler(Looper.getMainLooper()).postDelayed({ finish() }, 3000)
+                }
             }
         })
     }
@@ -372,6 +413,7 @@ class VideoCallActivity : AppCompatActivity() {
                 runOnUiThread {
                     stream.videoTracks.firstOrNull()?.let { videoTrack ->
                         videoTrack.addSink(remoteVideoView)
+                        updateCallState(CallState.CONNECTED)
                         Log.d("WebRTC", "✅ Remote video track added to view")
                     } ?: Log.w("WebRTC", "⚠️ No video track in remote stream")
                 }
@@ -401,6 +443,7 @@ class VideoCallActivity : AppCompatActivity() {
                         runOnUiThread {
                             val videoTrack = track as VideoTrack
                             videoTrack.addSink(remoteVideoView)
+                            updateCallState(CallState.CONNECTED)
                             Log.d("WebRTC", "✅ Remote video track connected via onTrack")
                         }
                     }
@@ -530,9 +573,96 @@ class VideoCallActivity : AppCompatActivity() {
         }
     }
 
-    private fun endCall() {
-        peerConnection?.close()
-        peerConnection = null
+    private fun endCall(fromRemote: Boolean = false) {
+        // Prevent multiple calls to endCall
+        if (isEndingCall) {
+            Log.d("WebRTC", "Already ending call, skipping duplicate endCall")
+            return
+        }
+        isEndingCall = true
+        
+        updateCallState(CallState.ENDED)
+        
+        // Only notify signaling server if this is initiated locally (not from remote end message)
+        if (!fromRemote) {
+            val endCallMessage = JSONObject().apply {
+                put("type", "call_ended")
+                put("userId", userId)
+                put("target", receiverId)
+            }
+            try {
+                webSocket?.send(endCallMessage.toString())
+                Log.d("WebRTC", "Call end notification sent to server")
+            } catch (e: Exception) {
+                Log.e("WebRTC", "Error sending call end notification: ${e.message}")
+            }
+        }
+        
+        // Clean up resources properly
+        try {
+            videoCapturer?.stopCapture()
+            videoCapturer?.dispose()
+            videoCapturer = null
+            
+            localVideoTrack?.dispose()
+            localVideoTrack = null
+            
+            localAudioTrack?.dispose()
+            localAudioTrack = null
+            
+            peerConnection?.close()
+            peerConnection = null
+            
+            // Close WebSocket connection
+            webSocket?.close(1000, "Call ended")
+            webSocket = null
+            
+            // Clean up video views
+            localVideoView.release()
+            remoteVideoView.release()
+            eglBase.release()
+            
+            Log.d("WebRTC", "All resources cleaned up successfully")
+        } catch (e: Exception) {
+            Log.e("WebRTC", "Error during cleanup: ${e.message}")
+        }
+        
         finish()
+    }
+
+    private fun updateCallState(newState: CallState) {
+        callState = newState
+        runOnUiThread {
+            val statusText = when (newState) {
+                CallState.CONNECTING -> "Connecting..."
+                CallState.CALLING -> "Calling..."
+                CallState.RINGING -> "Incoming call..."
+                CallState.CONNECTED -> {
+                    // Hide status text when connected
+                    callStatusText.visibility = android.view.View.GONE
+                    return@runOnUiThread
+                }
+                CallState.ENDED -> "Call ended"
+            }
+            callStatusText.text = statusText
+            callStatusText.visibility = android.view.View.VISIBLE
+        }
+    }
+
+    private fun tryStartCallIfReady() {
+        Log.d("WebRTC", "Checking if ready to start call...")
+        Log.d("WebRTC", "WebRTC initialized: $isWebRTCInitialized")
+        Log.d("WebRTC", "Signaling connected: $isSignalingConnected") 
+        Log.d("WebRTC", "Should start call: $shouldStartCallWhenReady")
+        
+        if (isWebRTCInitialized && isSignalingConnected && shouldStartCallWhenReady) {
+            Log.d("WebRTC", "🚀 All conditions met - starting call!")
+            shouldStartCallWhenReady = false // Prevent multiple calls
+            
+            // Small delay to ensure everything is properly initialized
+            Handler(Looper.getMainLooper()).postDelayed({
+                startCall()
+            }, 500)
+        }
     }
 }
