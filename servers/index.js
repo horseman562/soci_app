@@ -2,7 +2,7 @@ const axios = require('axios');
 const uWS = require('uWebSockets.js');
 const admin = require('firebase-admin');
 const fs = require('fs');
-const port = 3002;
+const port = 1122;
 const users = {};
 const mysql = require('mysql2');
 
@@ -49,7 +49,7 @@ const app = uWS./*SSL*/App({
   /* Options */
   compression: uWS.SHARED_COMPRESSOR,
   maxPayloadLength: 16 * 1024 * 1024,
-  idleTimeout: 10,
+  idleTimeout: 0, // Unlimited idle timeout
   upgrade: (res, req, context) => {
     res.upgrade({
         url: req.getUrl(),
@@ -99,7 +99,7 @@ const app = uWS./*SSL*/App({
 
       // Fetch chat details
       const chatDetailResponse = await axios.get(
-        `https://2d5f98860316.ngrok-free.app/api/chat-detail?chat_id=${data.chat_id}&sender_id=${data.sender_id}`,
+        `http://192.168.0.5:8000/api/chat-detail?chat_id=${data.chat_id}&sender_id=${data.sender_id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -114,24 +114,34 @@ const app = uWS./*SSL*/App({
       const receiverWs = users[receiver_id];
   
 
-      if (receiverWs) {
+      if (receiverWs && receiverWs.readyState === receiverWs.OPEN) {
           console.log("user is online")
           // If online, send the message immediately
-          receiverWs.send(JSON.stringify({
-            type: 'message',
-            receiver_id: receiver_id,
-            sender_id: data.sender_id,
-            message: data.message
-          }));
+          try {
+            receiverWs.send(JSON.stringify({
+              type: 'message',
+              receiver_id: receiver_id,
+              sender_id: data.sender_id,
+              message: data.message
+            }));
+          } catch (error) {
+            console.error('Error sending to receiver:', error);
+            // Remove closed connection
+            delete users[receiver_id];
+          }
 
           // Send acknowledgment back to the sender
-          ws.send(JSON.stringify({
-            type: 'message',
-            receiver_id: receiver_id,
-            sender_id: data.sender_id,
-            message: data.message,
-            //status: 'delivered'
-        }));
+          try {
+            ws.send(JSON.stringify({
+              type: 'message',
+              receiver_id: receiver_id,
+              sender_id: data.sender_id,
+              message: data.message,
+              //status: 'delivered'
+            }));
+          } catch (error) {
+            console.error('Error sending acknowledgment:', error);
+          }
           
       } else {
             console.log("user is offline")
@@ -139,7 +149,7 @@ const app = uWS./*SSL*/App({
             try { 
               // Fetch user details
               const userResponse = await axios.get(
-                `https://2d5f98860316.ngrok-free.app/api/check-user?user_id=${receiver_id}`,
+                `http://192.168.0.5:8000/api/check-user?user_id=${receiver_id}`,
                 {
                   headers: {
                     Authorization: `Bearer ${token}`
@@ -187,18 +197,26 @@ const app = uWS./*SSL*/App({
                         console.error('Database error:', error);
                     }
                 
-                    ws.send(JSON.stringify({
-                        type: 'message',
-                        receiver_id: receiver_id,
-                        sender_id: data.sender_id,
-                        message: data.message
-                    }));
+                    try {
+                      ws.send(JSON.stringify({
+                          type: 'message',
+                          receiver_id: receiver_id,
+                          sender_id: data.sender_id,
+                          message: data.message
+                      }));
+                    } catch (error) {
+                      console.error('Error sending offline message response:', error);
+                    }
                   } else {
                       console.error('Receiver does not exist in the database.');
-                      ws.send(JSON.stringify({
-                          type: 'error',
-                          message: 'Receiver does not exist.'
-                      }));
+                      try {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: 'Receiver does not exist.'
+                        }));
+                      } catch (error) {
+                        console.error('Error sending error message:', error);
+                      }
                   }
           } catch (dbError) {
               console.error('Database error:', dbError.response?.data || dbError.message);
@@ -212,7 +230,12 @@ const app = uWS./*SSL*/App({
     console.log('WebSocket backpressure: ' + ws.getBufferedAmount());
   },
   close: (ws, code, message) => {
-    console.log('WebSocket closed');
+    console.log('WebSocket closed for user:', ws.userId);
+    // Remove user from active connections
+    if (ws.userId && users[ws.userId]) {
+      delete users[ws.userId];
+      console.log('Removed user', ws.userId, 'from active connections');
+    }
   }
 }).options('/test-notification', (res, req) => {
   // Handle CORS preflight requests
@@ -262,7 +285,7 @@ const app = uWS./*SSL*/App({
   });
 }).get('/firebase-test', (res, req) => {
   // Serve the test HTML page
-  res.writeHeader('Content-Type', 'text/html')
+  res.writeHeader('Content-Type', 'text/html; charset=utf-8')
      .writeHeader('Access-Control-Allow-Origin', '*');
   
   res.onAborted(() => {
@@ -275,11 +298,38 @@ const app = uWS./*SSL*/App({
   } catch (error) {
     res.writeStatus('500 Internal Server Error').end('Error loading test page');
   }
+}).get('/', (res, req) => {
+  // Serve simple homepage
+  res.writeHeader('Content-Type', 'text/html; charset=utf-8');
+  res.onAborted(() => {
+    console.log('Root request aborted');
+  });
+  
+  res.end(`
+    <html>
+      <head><title>Soci App Server</title></head>
+      <body>
+        <h1>Soci App Server is Running!</h1>
+        <p>Available endpoints:</p>
+        <ul>
+          <li><a href="/firebase-test">Firebase Test Page</a></li>
+          <li>POST /test-notification - Send test notifications</li>
+          <li>WebSocket at / - Real-time messaging</li>
+        </ul>
+      </body>
+    </html>
+  `);
 }).any('/*', (res, req) => {
+  res.writeHeader('Content-Type', 'text/plain');
   res.end('Nothing to see here!');
 }).listen(port, (token) => {
   if (token) {
-    console.log('Listening to port ' + port);
+    console.log('🚀 Server listening on port ' + port);
+    console.log('📱 Local server URLs:');
+    console.log(`   HTTP: http://localhost:${port}`);
+    console.log(`   WebSocket: ws://localhost:${port}/[USER_ID]`);
+    console.log(`   Test notifications: http://localhost:${port}/test-notification`);
+    console.log('💡 For device testing, use your computer\'s IP address instead of localhost');
   } else {
     console.log('Failed to listen to port ' + port);
   }

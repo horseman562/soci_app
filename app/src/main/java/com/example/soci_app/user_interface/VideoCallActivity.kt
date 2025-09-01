@@ -197,7 +197,7 @@ class VideoCallActivity : AppCompatActivity() {
 
     private fun connectToSignalingServer() {
         val request = Request.Builder()
-            .url("https://legal-baths-refuse.loca.lt")  // Replace with actual WebSocket URL
+            .url("ws://192.168.0.5:3001")  // Signaling server for WebRTC
             .build()
 
         val client = OkHttpClient.Builder()
@@ -256,7 +256,11 @@ class VideoCallActivity : AppCompatActivity() {
                                     put("userId", userId) // Add sender ID
                                     put("sdp", sdp.description)
                                 }.toString()
-                                webSocket?.send(answerMessage)
+                                try {
+                    webSocket?.send(answerMessage)
+                } catch (e: Exception) {
+                    Log.e("WebRTC", "Error sending answer: ${e.message}")
+                }
                             }
 
                             override fun onSetFailure(error: String?) {
@@ -355,8 +359,12 @@ class VideoCallActivity : AppCompatActivity() {
                 }.toString()
 
                 Log.d("WebRTC", "Sending ICE candidate to userId=$receiverId: $iceMessage")
-                webSocket?.send(iceMessage)
-                Log.d("WebRTC", "ICE candidate sent via WebSocket")
+                try {
+                    webSocket?.send(iceMessage)
+                    Log.d("WebRTC", "ICE candidate sent via WebSocket")
+                } catch (e: Exception) {
+                    Log.e("WebRTC", "Error sending ICE candidate: ${e.message}")
+                }
             }
 
             override fun onAddStream(stream: MediaStream) {
@@ -421,8 +429,12 @@ class VideoCallActivity : AppCompatActivity() {
                 }.toString()
 
                 Log.d("WebRTC", "Sending ICE candidate to userId=$receiverId: $iceMessage")
-                webSocket?.send(iceMessage)
-                Log.d("WebRTC", "ICE candidate sent via WebSocket")
+                try {
+                    webSocket?.send(iceMessage)
+                    Log.d("WebRTC", "ICE candidate sent via WebSocket")
+                } catch (e: Exception) {
+                    Log.e("WebRTC", "Error sending ICE candidate: ${e.message}")
+                }
             }
 
             override fun onAddStream(stream: MediaStream) {
@@ -469,7 +481,11 @@ class VideoCallActivity : AppCompatActivity() {
                             put("initiatorId", userId)
                             put("sdp", sdp.description)
                         }.toString()
-                        webSocket?.send(offerMessage)
+                        try {
+                            webSocket?.send(offerMessage)
+                        } catch (e: Exception) {
+                            Log.e("WebRTC", "Error sending offer: ${e.message}")
+                        }
                     }
 
                     override fun onSetFailure(error: String?) {

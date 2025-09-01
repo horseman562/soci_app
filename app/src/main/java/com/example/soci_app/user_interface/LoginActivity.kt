@@ -10,9 +10,12 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.soci_app.R
+import com.example.soci_app.api.FcmTokenRequest
 import com.example.soci_app.api.RetrofitClient
 import com.example.soci_app.model.LoginRequest
 import com.example.soci_app.model.LoginResponse
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import com.google.firebase.messaging.FirebaseMessaging
 import retrofit2.Call
 import retrofit2.Callback
@@ -54,8 +57,12 @@ class LoginActivity : AppCompatActivity() {
             startActivity(Intent(this, RegisterActivity::class.java))
         }
 
-        // Get FCM Token for testing
-        getFCMToken()
+        // Get FCM Token for testing - only if Play Services available
+        if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this) == ConnectionResult.SUCCESS) {
+            getFCMToken()
+        } else {
+            Log.w("FCM", "Google Play Services not available - FCM disabled")
+        }
     }
 
     private fun loginUser(email: String, password: String) {
@@ -73,6 +80,13 @@ class LoginActivity : AppCompatActivity() {
 
                     Toast.makeText(this@LoginActivity, "Login Successful!", Toast.LENGTH_SHORT).show()
                     Log.d("TOKEN", "Bearer $token")
+
+                    // Send FCM token to server after successful login - only if Play Services available
+                    if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this@LoginActivity) == ConnectionResult.SUCCESS) {
+                        sendFCMTokenToServer()
+                    } else {
+                        Log.w("FCM", "Skipping FCM token - Google Play Services not available")
+                    }
 
                     // Navigate to Home Screen
                     val intent = Intent(this@LoginActivity, HomeActivity::class.java)
@@ -103,6 +117,44 @@ class LoginActivity : AppCompatActivity() {
             Toast.makeText(this, "FCM Token logged - check logcat", Toast.LENGTH_LONG).show()
 
             // TODO: Send token to your server to store in database
+        }
+    }
+
+    private fun sendFCMTokenToServer() {
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w("FCM", "Fetching FCM registration token failed", task.exception)
+                return@addOnCompleteListener
+            }
+
+            val fcmToken = task.result
+            Log.d("FCM", "Sending FCM token to server: $fcmToken")
+            
+            val sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
+            val authToken = sharedPreferences.getString("AUTH_TOKEN", null)
+            
+            if (authToken != null) {
+                val authHeader = "Bearer $authToken"
+                val request = FcmTokenRequest(fcmToken)
+                
+                RetrofitClient.instance.updateFcmToken(authHeader, request)
+                    .enqueue(object : Callback<com.example.soci_app.api.ApiResponse> {
+                        override fun onResponse(
+                            call: Call<com.example.soci_app.api.ApiResponse>,
+                            response: Response<com.example.soci_app.api.ApiResponse>
+                        ) {
+                            if (response.isSuccessful) {
+                                Log.d("FCM", "FCM token sent to server successfully")
+                            } else {
+                                Log.e("FCM", "Failed to send FCM token: ${response.errorBody()?.string()}")
+                            }
+                        }
+                        
+                        override fun onFailure(call: Call<com.example.soci_app.api.ApiResponse>, t: Throwable) {
+                            Log.e("FCM", "Error sending FCM token: ${t.message}")
+                        }
+                    })
+            }
         }
     }
 

@@ -5,13 +5,19 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.soci_app.R
+import com.example.soci_app.api.FcmTokenRequest
+import com.example.soci_app.api.RetrofitClient
 import com.example.soci_app.user_interface.ChatActivity
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 
 class FirebaseMessagingService : FirebaseMessagingService() {
 
@@ -86,8 +92,35 @@ class FirebaseMessagingService : FirebaseMessagingService() {
     }
 
     private fun sendRegistrationToServer(token: String) {
-        // TODO: Send token to your server to store for sending notifications
         Log.d(TAG, "FCM Registration Token: $token")
+        
+        val sharedPreferences: SharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
+        val authToken = sharedPreferences.getString("AUTH_TOKEN", null)
+        
+        if (authToken != null) {
+            val authHeader = "Bearer $authToken"
+            val request = FcmTokenRequest(token)
+            
+            RetrofitClient.instance.updateFcmToken(authHeader, request)
+                .enqueue(object : Callback<com.example.soci_app.api.ApiResponse> {
+                    override fun onResponse(
+                        call: Call<com.example.soci_app.api.ApiResponse>,
+                        response: Response<com.example.soci_app.api.ApiResponse>
+                    ) {
+                        if (response.isSuccessful) {
+                            Log.d(TAG, "FCM token sent to server successfully")
+                        } else {
+                            Log.e(TAG, "Failed to send FCM token to server: ${response.errorBody()?.string()}")
+                        }
+                    }
+                    
+                    override fun onFailure(call: Call<com.example.soci_app.api.ApiResponse>, t: Throwable) {
+                        Log.e(TAG, "Error sending FCM token to server: ${t.message}")
+                    }
+                })
+        } else {
+            Log.w(TAG, "No auth token available, cannot send FCM token to server")
+        }
     }
 
     companion object {

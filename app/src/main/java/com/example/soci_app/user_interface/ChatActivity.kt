@@ -89,11 +89,14 @@ class ChatActivity : AppCompatActivity() {
 
     private fun connectWebSocket() {
         val request = Request.Builder()
-            .url("https://busy-masks-begin.loca.lt/${currentUserId}")
+            .url("ws://192.168.0.5:1122/${currentUserId}")
             .build()
 
         val client = OkHttpClient.Builder()
-            .pingInterval(10, TimeUnit.SECONDS) // Keep connection alive
+            .pingInterval(30, TimeUnit.SECONDS) // Keep connection alive
+            .readTimeout(0, TimeUnit.MILLISECONDS) // No read timeout
+            .writeTimeout(0, TimeUnit.MILLISECONDS) // No write timeout
+            .connectTimeout(30, TimeUnit.SECONDS) // Connection timeout
             .build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {

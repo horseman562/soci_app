@@ -43,6 +43,12 @@ interface ApiService {
         @Header("Authorization") token: String,
         @retrofit2.http.Query("phone") phoneNumber: String
     ): Call<UserCheckResponse>
+
+    @POST("users/fcm-token")
+    fun updateFcmToken(
+        @Header("Authorization") token: String,
+        @Body request: FcmTokenRequest
+    ): Call<ApiResponse>
 }
 
 data class CreateChatRequest(val user1_id: Int, val user2_id: Int)
@@ -50,4 +56,11 @@ data class CreateChatRequest(val user1_id: Int, val user2_id: Int)
 data class UserCheckResponse(
     val exists: Boolean,
     val user: User?
+)
+
+data class FcmTokenRequest(val fcm_token: String)
+
+data class ApiResponse(
+    val success: Boolean,
+    val message: String
 )

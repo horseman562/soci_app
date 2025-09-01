@@ -18,29 +18,47 @@ server.on("connection", (ws) => {
                     break;
 
                 case "offer":
-                    if (clients[data.target]) {
+                    if (clients[data.target] && clients[data.target].readyState === WebSocket.OPEN) {
                         console.log(`Sending offer from ${data.initiatorId || data.userId} to ${data.target}`);
-                        clients[data.target].send(JSON.stringify(data));
+                        try {
+                            clients[data.target].send(JSON.stringify(data));
+                        } catch (error) {
+                            console.error(`Error sending offer to ${data.target}:`, error.message);
+                            delete clients[data.target];
+                        }
                     } else {
-                        console.log(`Target ${data.target} not found.`);
+                        console.log(`Target ${data.target} not found or connection closed.`);
+                        if (clients[data.target]) delete clients[data.target];
                     }
                     break;
 
                 case "answer":
-                    if (clients[data.target]) {
+                    if (clients[data.target] && clients[data.target].readyState === WebSocket.OPEN) {
                         console.log(`Sending answer from ${data.initiatorId || data.userId || 'unknown'} to ${data.target}`);
-                        clients[data.target].send(JSON.stringify(data));
+                        try {
+                            clients[data.target].send(JSON.stringify(data));
+                        } catch (error) {
+                            console.error(`Error sending answer to ${data.target}:`, error.message);
+                            delete clients[data.target];
+                        }
                     } else {
-                        console.log(`Target ${data.target} not found.`);
+                        console.log(`Target ${data.target} not found or connection closed.`);
+                        if (clients[data.target]) delete clients[data.target];
                     }
                     break;
 
                 case "candidate":
-                    if (clients[data.target]) {
+                    if (clients[data.target] && clients[data.target].readyState === WebSocket.OPEN) {
                         console.log(`Relaying ICE candidate from ${data.userId || 'unknown'} to ${data.target}`);
-                        clients[data.target].send(JSON.stringify(data));
+                        try {
+                            clients[data.target].send(JSON.stringify(data));
+                        } catch (error) {
+                            console.error(`Error sending ICE candidate to ${data.target}:`, error.message);
+                            delete clients[data.target];
+                        }
                     } else {
-                        console.log(`Target ${data.target} not found.`);
+                        console.log(`Target ${data.target} not found or connection closed.`);
+                        if (clients[data.target]) delete clients[data.target];
                     }
                     break;
 
